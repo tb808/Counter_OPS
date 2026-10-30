@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COUNTER OPS: TACTICAL STRIKE — 3D Tactical Browser Shooter</title>
+  <link rel="stylesheet" href="css/style.css?v=3" />
+</head>
+<body>
+
+  <!-- 3D GAME & LOBBY CANVASES -->
+  <canvas id="game-canvas"></canvas>
+  <canvas id="lobby-canvas"></canvas>
+
+  <!-- ========================================================================
+       LOBBY MENU SCREEN (CS2 PANORAMA INTERFACE)
+       ======================================================================== -->
+  <div id="lobby-screen">
+    <!-- Top Bar -->
+    <header class="lobby-topbar">
+      <div class="brand-logo">
+        <div class="brand-badge">CS</div>
+        <div class="brand-title">
+          COUNTER OPS
+          <span>TACTICAL STRIKE 3D</span>
+        </div>
+      </div>
+
+      <nav class="lobby-nav">
+        <button class="nav-tab-btn active" data-tab="play">🎮 SPIELEN</button>
+        <button class="nav-tab-btn" data-tab="loadout">🧍 AUSSEHEN &amp; INVENTAR</button>
+        <button class="nav-tab-btn" data-tab="cases">📦 KISTEN ÖFFNEN</button>
+        <button class="nav-tab-btn" data-tab="shop">🛒 ITEM SHOP</button>
+        <button class="nav-tab-btn" data-tab="settings">⚙️ EINSTELLUNGEN</button>
+      </nav>
+
+      <div class="lobby-profile-bar">
+        <div class="rank-box">
+          <div id="header-rank-name">🥈 Silver Elite</div>
+          <div class="xp-bar-bg"><div id="header-xp-fill"></div></div>
+        </div>
+        <div class="credits-pill">
+          <span>🪙</span>
+          <span id="header-credits">2.500</span>
+          <span>CR</span>
+        </div>
+        <button id="btn-claim-bonus" class="bonus-cr-btn" title="Gratis Credits zum Testen von Kisten &amp; Skins!">
+          +1.000 CR Gratis
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab Panels -->
+    <main class="lobby-content-area">
+
+      <!-- 1. PLAY TAB (Left: Mode & Team | Center: 3D Agent Preview | Right: Maps & Start) -->
+      <section id="tab-play" class="lobby-tab-panel active">
+        <div class="play-layout">
+          <div class="glass-panel side-panel">
+            <div class="panel-title">1. SPIELMODUS WÄHLEN</div>
+            <div id="mode-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+
+            <div class="panel-title" style="margin-top:8px;">2. EINHEIT / TEAM WÄHLEN</div>
+            <div class="team-picker">
+              <button class="team-pick-btn selected" data-team="CT">🛡️ COUNTER-TERRORISTS</button>
+              <button class="team-pick-btn" data-team="T">⚔️ TERRORISTEN</button>
+            </div>
+          </div>
+
+          <div class="glass-panel side-panel">
+            <div class="panel-title">3. EINSATZKARTE (MAP) WÄHLEN</div>
+            <div id="map-list"></div>
+
+            <button id="btn-start-match" class="start-match-btn">
+              ▶ MATCH STARTEN
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. APPEARANCE & LOADOUT CUSTOMIZER TAB -->
+      <section id="tab-loadout" class="lobby-tab-panel">
+        <div class="play-layout">
+          <div class="glass-panel side-panel" style="width:430px;">
+            <div class="panel-title">🧍 AGENTEN-AUSSEHEN (UNIFORM &amp; VISIER)</div>
+            <div id="customizer-outfits" class="items-grid"></div>
+
+            <div class="panel-title" style="margin-top:10px;">🗡️ SPEZIAL-MESSER &amp; HANDSCHUHE</div>
+            <div id="customizer-knives-gloves" class="items-grid"></div>
+          </div>
+
+          <div class="glass-panel side-panel" style="width:470px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div class="panel-title" style="border:none;padding:0;">🎨 WAFFEN-SKINS ANPASSEN</div>
+              <button id="btn-apply-skin-all" class="bonus-cr-btn" style="font-size:11px;padding:6px 10px;">
+                Auf alle Waffen anwenden
+              </button>
+            </div>
+            <div id="customizer-weapon-list" class="weapon-pill-bar"></div>
+            <div id="customizer-skins" class="items-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. CASE UNBOXING ROULETTE TAB ("KISTEN ÖFFNEN") -->
+      <section id="tab-cases" class="lobby-tab-panel">
+        <div class="glass-panel full-panel">
+          <div class="panel-title">📦 WAFFEN- &amp; MESSER-KISTEN KAUFEN &amp; ÖFFNEN</div>
+          <div id="case-selector-list" class="case-selector-row"></div>
+
+          <!-- Roulette Track -->
+          <div id="inline-roulette-viewport" class="roulette-viewport">
+            <div class="roulette-edge-vignette"></div>
+            <div class="roulette-needle"></div>
+            <div id="roulette-track">
+              <div style="color:#64748b;font-weight:700;padding:0 24px;">
+                Wähle oben eine Kiste und klicke auf „Kiste kaufen &amp; öffnen“, um das Unboxing-Roulette zu starten!
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:center;">
+            <button id="btn-open-case" class="start-match-btn" style="padding:13px 34px;font-size:15px;">
+              🔓 KISTE KAUFEN &amp; ÖFFNEN
+            </button>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <div class="panel-title" style="border:none;padding:0;">ENTHALTENE OBJEKTE IN DIESER KISTE (AUF WAFFE VORSCHAUEN):</div>
+            <div id="case-weapon-preview-bar" class="weapon-pill-bar"></div>
+          </div>
+          <div id="case-contents-preview" class="case-loot-grid"></div>
+        </div>
+      </section>
+
+      <!-- 4. COSMETICS ITEM SHOP TAB -->
+      <section id="tab-shop" class="lobby-tab-panel">
+        <div class="glass-panel full-panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+            <div class="panel-title" style="border:none;padding:0;">🛒 COSMETICS &amp; SKIN SHOP (MIT CREDITS KAUFEN)</div>
+            <div style="display:flex;gap:8px;">
+              <button class="nav-tab-btn shop-filter-btn active" data-filter="all">Alle Artikel</button>
+              <button class="nav-tab-btn shop-filter-btn" data-filter="skin">Waffen-Skins</button>
+              <button class="nav-tab-btn shop-filter-btn" data-filter="knife">★ Messer</button>
+              <button class="nav-tab-btn shop-filter-btn" data-filter="outfit">Agenten-Outfits</button>
+              <button class="nav-tab-btn shop-filter-btn" data-filter="glove">★ Handschuhe</button>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(15,23,42,0.65);padding:8px 12px;border-radius:8px;border:1px solid rgba(56,189,248,0.2);">
+            <span style="font-size:11.5px;font-weight:800;color:#38bdf8;">🔫 SKIN-VORSCHAU AUF WAFFE:</span>
+            <div id="shop-weapon-preview-bar" class="weapon-pill-bar"></div>
+          </div>
+
+          <div id="shop-items-grid" class="shop-grid"></div>
+        </div>
+      </section>
+
+      <!-- 5. SETTINGS & CONTROLS TAB -->
+      <section id="tab-settings" class="lobby-tab-panel">
+        <div class="glass-panel side-panel" style="width:560px;margin:0 auto;">
+          <div class="panel-title">⚙️ SPIEL- &amp; STEUERUNGS-EINSTELLUNGEN</div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label>Mausempfindlichkeit (Sensitivity): <strong id="setting-sens-val">2.2</strong></label>
+            <input type="range" id="setting-sens" min="0.4" max="6.0" step="0.1" value="2.2" style="width:200px;" />
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label>Gesamtlautstärke: <strong id="setting-vol-val">75%</strong></label>
+            <input type="range" id="setting-vol" min="0" max="1" step="0.05" value="0.75" style="width:200px;" />
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label>Fadenkreuz-Farbe:</label>
+            <input type="color" id="setting-ch-color" value="#00ff66" />
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label>Teamgröße (Bots): <strong id="setting-bots-val">5v5</strong></label>
+            <input type="range" id="setting-bots" min="1" max="6" step="1" value="4" style="width:200px;" />
+          </div>
+
+          <div class="panel-title" style="margin-top:12px;">⌨️ TASTATURBELEGUNG (COUNTER-STRIKE STANDARD)</div>
+          <div style="font-size:13px;line-height:1.75;color:#cbd5e1;">
+            <div><strong>[W, A, S, D]</strong> Bewegen &bull; <strong>[SPACE]</strong> Springen &bull; <strong>[CTRL / C]</strong> Ducken (präziseres Zielen)</div>
+            <div><strong>[SHIFT]</strong> Schleichen (Lautlose Schritte!) &bull; <strong>[LINKSKLICK]</strong> Schießen / Schlagen</div>
+            <div><strong>[RECHTSKLICK]</strong> Scope-Zoom (AWP/AUG) / Burst-Modus / Schalldämpfer / Schwerer Messerstich</div>
+            <div><strong>[B]</strong> Waffen- &amp; Granaten-Kaufmenü &bull; <strong>[R]</strong> Nachladen &bull; <strong>[F]</strong> Waffe / Messer inspizieren!</div>
+            <div><strong>[1-5]</strong> Waffenslots &bull; <strong>[Q]</strong> Schneller Waffenwechsel &bull; <strong>[G]</strong> Waffe fallenlassen</div>
+            <div><strong>[E]</strong> Bombe platzieren / entschärfen / Waffe aufheben &bull; <strong>[Z, X, V]</strong> Funkbefehle &bull; <strong>[TAB]</strong> Scoreboard</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom 3D Showcase Interactive Bar -->
+    <div class="showcase-floating-bar">
+      <span id="showcase-caption"><strong>SAS Midnight</strong> &bull; AK-47 | Standard</span>
+      <span style="color:#64748b;">(Mit Maus ziehen zum Drehen)</span>
+      <button id="btn-toggle-3d-view">🔍 Waffen-Nahaufnahme</button>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       IN-GAME TACTICAL HUD
+       ======================================================================== -->
+  <div id="hud-screen" class="hidden">
+    <div id="damage-vignette"></div>
+    <div id="spawn-shield-vignette"></div>
+    <div id="flashbang-overlay"></div>
+
+    <!-- Sniper Scope Overlay -->
+    <div id="scope-overlay" class="hidden">
+      <div class="scope-line-h"></div>
+      <div class="scope-line-v"></div>
+    </div>
+
+    <!-- Live 2D Tactical Radar (Top-Left) -->
+    <div class="hud-radar-box">
+      <canvas id="radar-canvas" width="196" height="196"></canvas>
+    </div>
+
+    <!-- Match Score & Timer (Top-Center) -->
+    <div class="hud-top-bar">
+      <div class="score-strip">
+        <div id="hud-score-ct" class="team-score ct">0</div>
+        <div id="hud-timer">5:00</div>
+        <div id="hud-score-t" class="team-score t">0</div>
+      </div>
+      <div id="hud-alive-counts">5 Alive vs 5 Alive</div>
+      <div id="spawn-shield-badge" class="spawn-shield-badge hidden">
+        <div class="spawn-shield-row">
+          <span>🛡️ SPAWN-SCHILD AKTIV (UNVERWUNDBAR)</span>
+          <span id="spawn-shield-timer">5.0s</span>
+        </div>
+        <div class="spawn-shield-track">
+          <div id="spawn-shield-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Killfeed (Top-Right) -->
+    <div id="killfeed"></div>
+
+    <!-- Center Crosshair & Hitmarker -->
+    <div id="crosshair">
+      <div class="ch-line ch-top"></div>
+      <div class="ch-line ch-bottom"></div>
+      <div class="ch-line ch-left"></div>
+      <div class="ch-line ch-right"></div>
+      <div class="ch-dot"></div>
+    </div>
+    <div id="hitmarker" class="hidden"></div>
+
+    <!-- Round Banner -->
+    <div id="round-banner" class="hidden">
+      <div id="banner-title">RUNDE 1</div>
+      <div id="banner-sub">DRÜCKE [B] ZUM WAFFENKAUF</div>
+    </div>
+
+    <!-- Bomb Plant / Defuse Prompt & Progress Bar -->
+    <div id="interaction-prompt" class="hidden"></div>
+    <div id="action-progress-wrap" class="hidden">
+      <div id="action-progress-label">C4 CODE EINGEBEN: 7355608</div>
+      <div class="progress-bar-track">
+        <div id="action-progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Death / Killcam Banner Overlay -->
+    <div id="death-screen-overlay" class="death-banner-card hidden">
+      <div class="death-skull-header">💀 DU WURDEST ELIMINIERT</div>
+      <div class="death-killer-row">
+        <img id="death-weapon-img" class="death-weapon-thumb" src="" alt="Waffe" />
+        <div class="death-killer-info">
+          <div id="death-killer-name" class="death-killer-title">BOT Phoenix</div>
+          <div id="death-weapon-label" class="death-weapon-sub">AK-47 | Standard Issue</div>
+        </div>
+      </div>
+      <div class="death-respawn-row">
+        <span id="death-respawn-text">Wiedereinstieg in 2.5s...</span>
+        <div class="death-respawn-track">
+          <div id="death-respawn-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom-Left Health, Armor & Money -->
+    <div class="hud-bottom-left">
+      <div class="stat-block">
+        <span class="stat-label">✚ HP</span>
+        <span id="hud-hp" class="stat-val">100</span>
+      </div>
+      <div class="stat-block">
+        <span class="stat-label">🛡️ AP</span>
+        <span id="hud-ap" class="stat-val">100</span>
+      </div>
+      <div class="stat-block money-block">
+        <span class="stat-label">KAUF [B]</span>
+        <span id="hud-money" class="stat-val">$800</span>
+      </div>
+    </div>
+
+    <!-- Bottom-Right Weapon Slots & Ammo -->
+    <div class="hud-bottom-right">
+      <div class="slots-list">
+        <div id="hud-slot-1" class="hud-slot-item"><span>[1]</span> <span class="slot-name">-</span></div>
+        <div id="hud-slot-2" class="hud-slot-item active"><span>[2]</span> <span class="slot-name">USP-S</span></div>
+        <div id="hud-slot-3" class="hud-slot-item"><span>[3]</span> <span class="slot-name">Kampfmesser</span></div>
+        <div id="hud-slot-4" class="hud-slot-item"><span>[4]</span> <span class="slot-name">-</span></div>
+        <div id="hud-slot-5" class="hud-slot-item"><span>[5]</span> <span class="slot-name">-</span></div>
+      </div>
+      <div class="ammo-box">
+        <div id="hud-weapon-name">USP-S | Standard Issue</div>
+        <div id="hud-ammo">12 / 24</div>
+      </div>
+    </div>
+
+    <!-- Controls Quick Hint -->
+    <div class="hud-controls-hint">
+      <strong>[B]</strong> Waffen kaufen &bull; <strong>[R]</strong> Nachladen &bull; <strong>[F]</strong> Skin inspizieren &bull; <strong>[Q]</strong> Quick-Switch &bull; <strong>[E]</strong> Bombe &bull; <strong>[TAB]</strong> Scoreboard &bull; <strong>[ESC]</strong> Menü
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODALS: BUY MENU [B], SCOREBOARD [TAB], PAUSE [ESC], UNBOX WINNER
+       ======================================================================== -->
+  <!-- Buy Menu Modal -->
+  <div id="buy-menu-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 style="font-size:20px;color:#38bdf8;">🛒 TAKTISCHES WAFFEN- &amp; AUSRÜSTUNGS-KAUFMENÜ</h2>
+          <p style="font-size:12px;color:#94a3b8;">Deine ausgerüsteten Lobby-Skins werden automatisch auf gekaufte Waffen angewendet!</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div style="font-size:24px;font-weight:900;color:#4ade80;" id="buy-menu-money">$800</div>
+          <button id="btn-close-buy" class="nav-tab-btn">SCHLIESSEN [B / ESC]</button>
+        </div>
+      </div>
+      <div id="buy-menu-grid" class="buy-grid"></div>
+    </div>
+  </div>
+
+  <!-- Scoreboard Modal [TAB] -->
+  <div id="scoreboard-overlay" class="modal-overlay hidden">
+    <div class="modal-card" style="width:min(780px, 90vw);">
+      <h3 style="color:#38bdf8;margin-bottom:6px;">🛡️ COUNTER-TERRORISTS</h3>
+      <table class="sb-table">
+        <thead>
+          <tr><th>Spieler</th><th>Kills</th><th>Assists</th><th>Deaths</th><th>Geld</th><th>Ping</th></tr>
+        </thead>
+        <tbody id="sb-body-ct"></tbody>
+      </table>
+
+      <h3 style="color:#fbbf24;margin-top:20px;margin-bottom:6px;">⚔️ TERRORISTEN</h3>
+      <table class="sb-table">
+        <thead>
+          <tr><th>Spieler</th><th>Kills</th><th>Assists</th><th>Deaths</th><th>Geld</th><th>Ping</th></tr>
+        </thead>
+        <tbody id="sb-body-t"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Pause Menu [ESC] -->
+  <div id="pause-overlay" class="modal-overlay hidden">
+    <div class="modal-card" style="width:440px;text-align:center;display:flex;flex-direction:column;gap:14px;">
+      <h2 style="color:#38bdf8;">SPIEL PAUSIERT</h2>
+      <p style="font-size:13px;color:#94a3b8;">Deine verdienten Credits &amp; XP werden automatisch gespeichert.</p>
+      <button id="btn-resume-game" class="start-match-btn">▶ WEITERSPIELEN</button>
+      <button id="btn-restart-round" class="nav-tab-btn" style="padding:13px;">🔄 NEUE 5-MINUTEN-RUNDE STARTEN</button>
+      <button id="btn-return-lobby" class="nav-tab-btn" style="padding:13px;">🏠 ZURÜCK INS HAUPTMENÜ (LOBBY)</button>
+    </div>
+  </div>
+
+  <!-- Round End Choice Modal (After 5-Minute Round Ends) -->
+  <div id="round-end-overlay" class="modal-overlay hidden">
+    <div class="modal-card" style="width:520px;text-align:center;display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:12px;font-weight:900;letter-spacing:2px;color:#38bdf8;">🏁 RUNDE BEENDET</div>
+      <h2 id="round-end-title" style="font-size:26px;color:#fbbf24;">COUNTER-TERRORISTS GEWINNEN!</h2>
+      <p id="round-end-reason" style="font-size:14px;color:#e2e8f0;"></p>
+
+      <div style="background:rgba(15,23,42,0.85);border:1px solid rgba(56,189,248,0.28);border-radius:10px;padding:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:700;">SPIELSTAND</div>
+          <div id="round-end-score" style="font-size:20px;font-weight:900;color:#fff;margin-top:4px;">1 : 0</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:700;">DEINE KILLS / DEATHS</div>
+          <div id="round-end-kd" style="font-size:20px;font-weight:900;color:#38bdf8;margin-top:4px;">0 / 0</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:700;">RUNDE CREDITS</div>
+          <div id="round-end-credits" style="font-size:20px;font-weight:900;color:#fbbf24;margin-top:4px;">+160 CR</div>
+        </div>
+      </div>
+
+      <p style="font-size:13px;color:#94a3b8;">Möchtest du noch eine 5-Minuten-Runde spielen oder zurück ins Hauptmenü?</p>
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button id="btn-play-next-round" class="start-match-btn" style="padding:15px;font-size:16px;">
+          🔄 NOCH EINE RUNDE SPIELEN (5 MIN)
+        </button>
+        <button id="btn-round-end-lobby" class="nav-tab-btn" style="padding:14px;font-size:14px;">
+          🏠 ZURÜCK INS HAUPTMENÜ (KISTEN &amp; SHOP)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Counter-Strike Live Case Opening Roulette Stage Modal -->
+  <div id="cs-unbox-stage-modal" class="modal-overlay hidden">
+    <div class="cs-unbox-stage-card">
+      <div class="cs-unbox-stage-header">
+        <span id="cs-unbox-stage-badge" class="cs-unbox-badge">🔓 KISTE WIRD ENTRIEGELT...</span>
+        <h2 id="cs-unbox-stage-title">OPERATION CASE</h2>
+      </div>
+
+      <!-- Phase 1: Case Unlocking Intro Box -->
+      <div id="cs-case-unlock-box" class="cs-case-unlock-box">
+        <div class="cs-case-unlock-glow"></div>
+        <img id="cs-case-unlock-img" class="cs-case-unlock-img" src="" alt="Case" />
+        <div class="cs-case-key-status">🗝️ SCHLOSS WIRD GEÖFFNET...</div>
+      </div>
+
+      <!-- Phase 2: Authentic Counter-Strike Horizontal Roulette Reel -->
+      <div id="cs-modal-roulette-viewport" class="roulette-viewport cs-modal-reel">
+        <div class="roulette-edge-vignette"></div>
+        <div class="roulette-needle"></div>
+        <div id="cs-modal-roulette-track" class="roulette-track-inner"></div>
+      </div>
+
+      <div id="cs-unbox-stage-sub" class="cs-unbox-stage-sub">
+        Kisten-Roulette läuft... Viel Glück!
+      </div>
+    </div>
+  </div>
+
+  <!-- Case Unboxing Winner Modal -->
+  <div id="unbox-winner-modal" class="modal-overlay hidden">
+    <div class="modal-card" style="width:540px;text-align:center;display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:12px;font-weight:900;letter-spacing:2px;color:#fbbf24;">★ COUNTER-STRIKE KISTEN-DROP ★</div>
+      <h2 id="unbox-win-name" style="font-size:22px;">AK-47 | Asiimov</h2>
+      <div id="unbox-win-rarity" style="font-size:13px;font-weight:800;">Covert</div>
+      <div id="unbox-win-swatch" class="unbox-win-preview-box"></div>
+      <div id="unbox-win-dup" style="font-size:12.5px;color:#4ade80;font-weight:700;"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="btn-equip-unboxed" class="start-match-btn" style="flex:1;padding:12px;font-size:13.5px;">✓ SOFORT AUSRÜSTEN</button>
+        <button id="btn-reopen-case" class="bonus-cr-btn" style="flex:1;padding:12px;font-size:13.5px;">🔄 NOCHMAL ÖFFNEN</button>
+        <button id="btn-close-unboxed" class="nav-tab-btn" style="padding:12px 18px;">SCHLIESSEN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container"></div>
+
+  <!-- SCRIPTS (Local Three.js + Modular Game Engine) -->
+  <script src="js/lib/three.min.js?v=4"></script>
+  <script src="js/data.js?v=4"></script>
+  <script src="js/audio.js?v=4"></script>
+  <script src="js/textures.js?v=4"></script>
+  <script src="js/weapons3d.js?v=4"></script>
+  <script src="js/maps.js?v=4"></script>
+  <script src="js/entities.js?v=4"></script>
+  <script src="js/ui.js?v=4"></script>
+  <script src="js/game.js?v=4"></script>
+</body>
+</html>
