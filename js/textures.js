@@ -353,6 +353,86 @@ class TextureGenerator {
       }
       roughness = 0.9;
       metalness = 0.0;
+    } else if (type === 'concrete_barrier') {
+      // Weathered concrete barrier with hazard caution stripes
+      ctx.fillStyle = '#8f9ba8';
+      ctx.fillRect(0, 0, 512, 512);
+      bctx.fillStyle = '#808080';
+      bctx.fillRect(0, 0, 512, 512);
+
+      // Noise speckles & distress
+      for (let i = 0; i < 400; i++) {
+        const nx = Math.random() * 512, ny = Math.random() * 512;
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)';
+        ctx.fillRect(nx, ny, 3 + Math.random() * 6, 2 + Math.random() * 4);
+      }
+      // Diagonal hazard safety stripes band along the center
+      const bandTop = 140, bandH = 230;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, bandTop, 512, bandH);
+      ctx.clip();
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(0, bandTop, 512, bandH);
+      ctx.fillStyle = '#1e293b';
+      for (let x = -200; x < 720; x += 80) {
+        ctx.beginPath();
+        ctx.moveTo(x, bandTop);
+        ctx.lineTo(x + 40, bandTop);
+        ctx.lineTo(x + 40 - bandH * 0.5, bandTop + bandH);
+        ctx.lineTo(x - bandH * 0.5, bandTop + bandH);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      // Dirt & weather grime along bottom edge
+      const grime = ctx.createLinearGradient(0, 512, 0, 420);
+      grime.addColorStop(0, 'rgba(40,30,20,0.45)');
+      grime.addColorStop(1, 'rgba(40,30,20,0)');
+      ctx.fillStyle = grime;
+      ctx.fillRect(0, 420, 512, 92);
+      roughness = 0.88;
+      metalness = 0.08;
+    } else if (type === 'metal_panel') {
+      // Riveted steel/galvanized industrial metal
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(0, 0, 512, 512);
+      bctx.fillStyle = '#808080';
+      bctx.fillRect(0, 0, 512, 512);
+      // Panel grid seams
+      ctx.strokeStyle = 'rgba(15,23,42,0.8)';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(12, 12, 488, 488);
+      ctx.beginPath();
+      ctx.moveTo(256, 12); ctx.lineTo(256, 500);
+      ctx.moveTo(12, 256); ctx.lineTo(500, 256);
+      ctx.stroke();
+      // Rivets
+      ctx.fillStyle = '#cbd5e1';
+      for (let rx = 36; rx <= 476; rx += 70) {
+        for (let ry of [28, 242, 270, 484]) {
+          ctx.beginPath(); ctx.arc(rx, ry, 5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      roughness = 0.42;
+      metalness = 0.72;
+    } else if (type === 'camo_tarp') {
+      // Military / cargo heavy canvas tarp
+      ctx.fillStyle = '#3f4e38';
+      ctx.fillRect(0, 0, 512, 512);
+      bctx.fillStyle = '#808080';
+      bctx.fillRect(0, 0, 512, 512);
+      // Camo blotches
+      const camoCols = ['#283624', '#556644', '#1f281b', '#62583e'];
+      for (let i = 0; i < 28; i++) {
+        ctx.fillStyle = camoCols[i % camoCols.length];
+        ctx.beginPath();
+        const bx = (i * 73) % 512, by = (i * 109) % 512;
+        ctx.ellipse(bx, by, 36 + (i % 4) * 14, 24 + (i % 3) * 12, (i * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      roughness = 0.92;
+      metalness = 0.02;
     }
 
     const mapTex = this.toThreeTexture(c, repeatX, repeatY);
