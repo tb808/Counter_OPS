@@ -31,8 +31,9 @@ class UIManager {
   loadProfile() {
     const defaultProfile = {
       playerName: 'StrikeCommander',
-      credits: 2500, // Generous starting balance to test Cases & Shop immediately
+      credits: 0, // Starts at 0 credits - earn through playing matches!
       xp: 450,
+      economyVersion: 2,
       totalKills: 0,
       ownedSkins: ['default', 'camo_desert'],
       ownedKnives: ['knife_default'],
@@ -62,6 +63,10 @@ class UIManager {
       const raw = localStorage.getItem(this.storageKey);
       if (!raw) return defaultProfile;
       const parsed = JSON.parse(raw);
+      if (!parsed.economyVersion || parsed.economyVersion < 2) {
+        parsed.credits = 0;
+        parsed.economyVersion = 2;
+      }
       return {
         ...defaultProfile,
         ...parsed,
@@ -279,15 +284,6 @@ class UIManager {
         this.lobbyPreviewMode = this.lobbyPreviewMode === 'agent' ? 'weapon' : 'agent';
         toggleViewBtn.textContent = this.lobbyPreviewMode === 'agent' ? '🔍 Waffen-Nahaufnahme' : '🧍 Agenten-Ansicht';
         this.rebuildLobbyShowcase();
-      });
-    }
-
-    // Free Credit Bonus button for testing unboxing & shop anytime
-    const bonusBtn = document.getElementById('btn-claim-bonus');
-    if (bonusBtn) {
-      bonusBtn.addEventListener('click', () => {
-        CS.audio.playUISound('buy');
-        this.addCredits(1000, 'Gratis Credits-Nachschub erhalten!');
       });
     }
 

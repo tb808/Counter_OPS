@@ -521,7 +521,8 @@ class TacticalGame {
       b.money = Math.min(16000, b.money + (b.team === winningTeam ? 3250 : 1900));
     });
 
-    const creditReward = playerWon ? 200 : 100;
+    const isPractice = this.currentMode === 'practice';
+    const creditReward = isPractice ? (playerWon ? 10 : 5) : (playerWon ? 25 : 10);
     const xpReward = playerWon ? 150 : 80;
     CS.ui.addCredits(creditReward, playerWon ? '5-Minuten-Runde gewonnen!' : '5-Minuten-Runde abgeschlossen');
     CS.ui.addXP(xpReward);
