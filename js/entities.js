@@ -227,6 +227,8 @@ class TacticalBot {
 
     // AI Tactical State
     this.targetWaypoint = null;
+    this.currentNavNode = null;
+    this.prevNavNode = null;
     this.assignedLane = 'mid';
     this.repathTimer = 0;
     this.fireCooldown = 0;
@@ -293,6 +295,8 @@ class TacticalBot {
     }
     const lanes = ['A', 'mid', 'B'];
     this.assignedLane = lanes[Math.floor(Math.random() * lanes.length)];
+    this.currentNavNode = null;
+    this.prevNavNode = null;
     this.pickNextWaypoint();
   }
 
@@ -318,31 +322,129 @@ class TacticalBot {
     }
   }
 
-  pickNextWaypoint(plantedBomb = null) {
-    const wps = CS.mapBuilder.waypoints;
-    if (!wps.length) return;
+  findNearestNavNode(x, z, nodes) {
+    let best = null;
+    let bestD = Infinity;
+    for (const n of nodes) {
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best;
+  }
 
-    // If bomb is planted, bots converge on the planted bomb site!
+  findNextHopBFS(startNode, goalNode, byId) {
+    if (!startNode || !goalNode) return null;
+    if (startNode.id === goalNode.id) return goalNode;
+    const visited = new Set([startNode.id]);
+    const queue = [];
+    for (const nbId of (startNode.links || [])) {
+      const nb = byId[nbId];
+      if (nb) {
+        visited.add(nbId);
+        queue.push({ node: nb, firstHop: nb });
+      }
+    }
+    while (queue.length > 0) {
+      const { node, firstHop } = queue.shift();
+      if (node.id === goalNode.id) return firstHop;
+      for (const nbId of (node.links || [])) {
+        if (!visited.has(nbId) && byId[nbId]) {
+          visited.add(nbId);
+          queue.push({ node: byId[nbId], firstHop });
+        }
+      }
+    }
+    return goalNode;
+  }
+
+  pickNextWaypoint(plantedBomb = null) {
+    const nodes = (CS.mapBuilder.navNodes && CS.mapBuilder.navNodes.length)
+      ? CS.mapBuilder.navNodes
+      : CS.mapBuilder.waypoints;
+    if (!nodes || !nodes.length) return;
+
+    const byId = {};
+    for (const n of nodes) byId[n.id] = n;
+
+    const curNode = (this.currentNavNode && byId[this.currentNavNode])
+      ? byId[this.currentNavNode]
+      : this.findNearestNavNode(this.position.x, this.position.z, nodes);
+
+    // 1. If bomb is planted, navigate along connected graph toward the planted bomb!
     if (plantedBomb && plantedBomb.active) {
-      this.targetWaypoint = { x: plantedBomb.position.x, z: plantedBomb.position.z };
+      const dToBomb = Math.hypot(plantedBomb.position.x - this.position.x, plantedBomb.position.z - this.position.z);
+      const goal = this.findNearestNavNode(plantedBomb.position.x, plantedBomb.position.z, nodes);
+      if (dToBomb < 6.5 || (curNode && goal && curNode.id === goal.id)) {
+        this.targetWaypoint = { x: plantedBomb.position.x, z: plantedBomb.position.z };
+        return;
+      }
+      const hop = this.findNextHopBFS(curNode, goal, byId) || goal;
+      this.prevNavNode = curNode ? curNode.id : null;
+      this.currentNavNode = hop.id;
+      this.targetWaypoint = { x: hop.x + (Math.random() - 0.5) * 1.2, z: hop.z + (Math.random() - 0.5) * 1.2 };
       return;
     }
 
-    // If T with C4, head to Bombsite A or B
+    // 1b. If C4 was dropped on the ground, Terrorist bots navigate to retrieve it!
+    const droppedBomb = CS.game && CS.game.droppedBomb;
+    if (this.team === 'T' && droppedBomb && droppedBomb.active) {
+      const dToDrop = Math.hypot(droppedBomb.position.x - this.position.x, droppedBomb.position.z - this.position.z);
+      const goal = this.findNearestNavNode(droppedBomb.position.x, droppedBomb.position.z, nodes);
+      if (dToDrop < 6.5 || (curNode && goal && curNode.id === goal.id)) {
+        this.targetWaypoint = { x: droppedBomb.position.x, z: droppedBomb.position.z };
+        return;
+      }
+      const hop = this.findNextHopBFS(curNode, goal, byId) || goal;
+      this.prevNavNode = curNode ? curNode.id : null;
+      this.currentNavNode = hop.id;
+      this.targetWaypoint = { x: hop.x + (Math.random() - 0.5) * 1.2, z: hop.z + (Math.random() - 0.5) * 1.2 };
+      return;
+    }
+
+    // 2. If T with C4, navigate along connected graph to Bombsite A or B!
     if (this.team === 'T' && this.hasC4) {
       const siteKey = this.assignedLane === 'B' ? 'B' : 'A';
       const site = CS.mapBuilder.bombsites[siteKey];
       if (site) {
-        this.targetWaypoint = { x: site.x + (Math.random() - 0.5) * 3, z: site.z + (Math.random() - 0.5) * 3 };
+        const dToSite = Math.hypot(site.x - this.position.x, site.z - this.position.z);
+        const siteNode = nodes.find(n => n.isSite === siteKey) || this.findNearestNavNode(site.x, site.z, nodes);
+        if (dToSite < 7.0 || (curNode && siteNode && curNode.id === siteNode.id)) {
+          this.targetWaypoint = { x: site.x + (Math.random() - 0.5) * 1.8, z: site.z + (Math.random() - 0.5) * 1.8 };
+          return;
+        }
+        const hop = this.findNextHopBFS(curNode, siteNode, byId) || siteNode;
+        this.prevNavNode = curNode ? curNode.id : null;
+        this.currentNavNode = hop.id;
+        this.targetWaypoint = { x: hop.x + (Math.random() - 0.5) * 1.4, z: hop.z + (Math.random() - 0.5) * 1.4 };
         return;
       }
     }
 
-    const laneWps = wps.filter(w => w.lane === this.assignedLane || Math.random() < 0.25);
-    const chosen = laneWps[Math.floor(Math.random() * laneWps.length)] || wps[0];
+    // 3. Connected tactical patrol along nav-graph edges (never tries to walk through buildings!)
+    if (curNode && curNode.links && curNode.links.length > 0) {
+      const neighbors = curNode.links.map(id => byId[id]).filter(Boolean);
+      const forward = neighbors.filter(n => n.id !== this.prevNavNode);
+      const pool = forward.length > 0 ? forward : neighbors;
+      const lanePref = pool.filter(n => n.lane === this.assignedLane);
+      const pickPool = (lanePref.length > 0 && Math.random() < 0.72) ? lanePref : pool;
+      const chosen = pickPool[Math.floor(Math.random() * pickPool.length)] || pool[0];
+      this.prevNavNode = curNode.id;
+      this.currentNavNode = chosen.id;
+      this.targetWaypoint = {
+        x: chosen.x + (Math.random() - 0.5) * 1.6,
+        z: chosen.z + (Math.random() - 0.5) * 1.6
+      };
+      return;
+    }
+
+    const laneWps = nodes.filter(w => w.lane === this.assignedLane || Math.random() < 0.25);
+    const chosen = laneWps[Math.floor(Math.random() * laneWps.length)] || nodes[0];
     this.targetWaypoint = {
-      x: chosen.x + (Math.random() - 0.5) * 4.5,
-      z: chosen.z + (Math.random() - 0.5) * 4.5
+      x: chosen.x + (Math.random() - 0.5) * 2.0,
+      z: chosen.z + (Math.random() - 0.5) * 2.0
     };
   }
 
@@ -516,7 +618,7 @@ class TacticalBot {
         // CT Bot defusing Planted C4
         if (this.team === 'CT' && game.plantedBomb.active) {
           const dToBomb = Math.hypot(this.position.x - game.plantedBomb.position.x, this.position.z - game.plantedBomb.position.z);
-          if (dToBomb < 2.8) {
+          if (dToBomb < 3.4) {
             this.defuseProgress += dt;
             const reqTime = this.hasDefuseKit ? 2.5 : 5.0;
             if (this.defuseProgress >= reqTime) {
@@ -554,7 +656,9 @@ class TacticalBot {
           const stepZ = (dz / dist) * speed * dt;
           const moved = this.moveWithCollision(stepX, stepZ);
           if (!moved) {
-            // Unstick by picking another waypoint
+            // Unstick by resetting to nearest nav node and picking another hop
+            this.currentNavNode = null;
+            this.prevNavNode = null;
             this.pickNextWaypoint(game.plantedBomb);
           }
         }

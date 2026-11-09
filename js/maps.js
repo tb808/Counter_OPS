@@ -8,6 +8,7 @@ class MapBuilder {
     this.colliders = [];
     this.raycastMeshes = [];
     this.waypoints = [];
+    this.navNodes = [];
     this.bombsites = {};
     this.spawns = { CT: [], T: [], DM: [] };
     this.mapBounds = { minX: -82, maxX: 82, minZ: -84, maxZ: 84 };
@@ -27,6 +28,7 @@ class MapBuilder {
     this.colliders = [];
     this.raycastMeshes = [];
     this.waypoints = [];
+    this.navNodes = [];
     this.animatedWindMeshes = [];
     this.spinningMeshes = [];
     this.cloudGroups = [];
@@ -919,6 +921,117 @@ class MapBuilder {
       }
     };
 
+    // --- ENTERABLE BUILDING / BUNKER ROOM WITH DOORWAYS & SHOOT-THROUGH WINDOWS ---
+    // wallsSpec: { N: 'solid'|'door'|'wideDoor'|'window'|'open', S: ..., E: ..., W: ... }
+    const addEnterableBuilding = (cx, cy, cz, w, h, d, wallsSpec = {}, wallMatName = wallType, roofMatName = wallType, hasRoof = true) => {
+      const t = 1.0; // Wall thickness
+      const doorW = Math.min(4.2, Math.max(3.2, Math.min(w, d) * 0.42));
+      const wideDoorW = Math.min(7.2, Math.max(4.8, Math.min(w, d) * 0.58));
+      const doorH = Math.min(3.6, h - 0.6);
+      const winW = Math.min(4.2, Math.max(2.6, Math.min(w, d) * 0.42));
+      const sillH = 1.15; // Waist-high cover sill you can shoot over!
+      const winTop = Math.min(2.65, h - 0.6);
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7, metalness: 0.3 });
+
+      const buildWallSpan = (wx, wz, spanLen, alongZ, mode = 'solid') => {
+        if (mode === 'open') return;
+        if (mode === 'solid') {
+          addBox(wx, cy, wz, alongZ ? t : spanLen, h, alongZ ? spanLen : t, wallMatName, true, floorSurface);
+          return;
+        }
+        const openW = mode === 'wideDoor' ? Math.min(wideDoorW, spanLen - 1.6) : (mode === 'door' ? Math.min(doorW, spanLen - 1.6) : Math.min(winW, spanLen - 1.6));
+        const sideLen = Math.max(0.6, (spanLen - openW) / 2);
+        const offset = openW / 2 + sideLen / 2;
+
+        if (!alongZ) {
+          addBox(wx - offset, cy, wz, sideLen, h, t, wallMatName, true, floorSurface);
+          addBox(wx + offset, cy, wz, sideLen, h, t, wallMatName, true, floorSurface);
+          if (mode === 'door' || mode === 'wideDoor') {
+            if (h > doorH + 0.15) addBox(wx, cy + doorH, wz, openW, h - doorH, t, wallMatName, true, floorSurface);
+            addBox(wx, cy + doorH - 0.1, wz, openW + 0.2, 0.18, t + 0.16, frameMat, false);
+          } else if (mode === 'window') {
+            addBox(wx, cy, wz, openW, sillH, t, wallMatName, true, floorSurface);
+            if (h > winTop + 0.15) addBox(wx, cy + winTop, wz, openW, h - winTop, t, wallMatName, true, floorSurface);
+            addBox(wx, cy + sillH, wz, openW + 0.16, 0.12, t + 0.18, frameMat, false);
+          }
+        } else {
+          addBox(wx, cy, wz - offset, t, h, sideLen, wallMatName, true, floorSurface);
+          addBox(wx, cy, wz + offset, t, h, sideLen, wallMatName, true, floorSurface);
+          if (mode === 'door' || mode === 'wideDoor') {
+            if (h > doorH + 0.15) addBox(wx, cy + doorH, wz, t, h - doorH, openW, wallMatName, true, floorSurface);
+            addBox(wx, cy + doorH - 0.1, wz, t + 0.16, 0.18, openW + 0.2, frameMat, false);
+          } else if (mode === 'window') {
+            addBox(wx, cy, wz, t, sillH, openW, wallMatName, true, floorSurface);
+            if (h > winTop + 0.15) addBox(wx, cy + winTop, wz, t, h - winTop, openW, wallMatName, true, floorSurface);
+            addBox(wx, cy + sillH, wz, t + 0.18, 0.12, openW + 0.16, frameMat, false);
+          }
+        }
+      };
+
+      buildWallSpan(cx, cz - d / 2 + t / 2, w, false, wallsSpec.N || 'solid');
+      buildWallSpan(cx, cz + d / 2 - t / 2, w, false, wallsSpec.S || 'solid');
+      buildWallSpan(cx - w / 2 + t / 2, cz, d - t * 2, true, wallsSpec.W || 'solid');
+      buildWallSpan(cx + w / 2 - t / 2, cz, d - t * 2, true, wallsSpec.E || 'solid');
+
+      if (hasRoof) {
+        addBox(cx, cy + h, cz, w + 0.4, 0.55, d + 0.4, roofMatName, true, floorSurface);
+        // Warm interior ceiling lamp
+        const bulb = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 0.12, 0.35),
+          new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        bulb.position.set(cx, cy + h - 0.08, cz);
+        mapGroup.add(bulb);
+      }
+    };
+
+    // --- COLONNADE / PILLAR ARCADE ROW ---
+    const addPillarArcade = (x1, z1, x2, z2, count = 4, y = 0, h = 4.6, matType = wallType) => {
+      const dx = x2 - x1;
+      const dz = z2 - z1;
+      const len = Math.hypot(dx, dz);
+      const rotY = Math.atan2(dx, dz);
+      for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0.5 : i / (count - 1);
+        addBox(x1 + dx * t, y, z1 + dz * t, 1.15, h, 1.15, matType, true, floorSurface);
+      }
+      // Overhead lintel beam connecting the pillars (high enough to walk under)
+      const beam = new THREE.Mesh(
+        new THREE.BoxGeometry(1.35, 0.75, len + 1.35),
+        CS.textures.getMaterial(matType, Math.max(1, Math.round(len / 4)), 1)
+      );
+      beam.position.set((x1 + x2) / 2, y + h + 0.375, (z1 + z2) / 2);
+      beam.rotation.y = rotY;
+      beam.castShadow = true;
+      mapGroup.add(beam);
+    };
+
+    // --- CALLOUT SIGNBOARD ON WALLS ---
+    const addTacticalSign = (sx, sy, sz, rotY = 0, label = 'SECTOR A', accent = '#f59e0b') => {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 64;
+      const ctx = c.getContext('2d');
+      if (ctx && ctx.fillRect) {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 256, 64);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 5;
+        ctx.strokeRect(4, 4, 248, 56);
+        ctx.fillStyle = accent;
+        ctx.font = 'bold 26px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, 128, 33);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      const mat = new THREE.MeshBasicMaterial({ map: tex });
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.62, 0.08), mat);
+      sign.position.set(sx, sy, sz);
+      sign.rotation.y = rotY;
+      mapGroup.add(sign);
+    };
+
     // ========================================================================
     // 4. OUTER PERIMETER BOUNDARY WALLS
     // ========================================================================
@@ -935,120 +1048,123 @@ class MapBuilder {
     // 5. DISTINCT ARCHITECTURAL LAYOUT PER MAP!
     // ========================================================================
     if (mapId === 'de_sandstorm') {
-      
-      // Outer perimeter wall seals (keeps combat on the tactical streets & sites!)
-      addBox(76, 0, 0, 12, wallH, 168, houseMat1); // East outer seal
+      // ======================================================================
+      // MAP 1: DE_SANDSTORM (TACTICAL DESERT CASBAH, PALACE, WINDOW & BAZAAR)
+      // ======================================================================
+      addBox(76, 0, 0, 12, wallH, 168, houseMat1);  // East outer seal
       addBox(-76, 0, 0, 12, wallH, 168, houseMat2); // West outer seal
       addBox(0, 0, -79, 168, wallH, 8, houseMat1);  // North outer seal
       addBox(0, 0, 79, 168, wallH, 8, houseMat2);   // South outer seal
 
-      // Roads
-      addRoadStrip(0, 0, 10.5, 144);
+      // Paved Roads & Cobble Plazas
+      addRoadStrip(0, 0, 10.5, 136);
       addRoadStrip(48, 4, 11.5, 118);
       addRoadStrip(-48, 4, 11.0, 118);
-      addRoadStrip(0, -62, 112, 10.0, CS.textures.getMaterial(roadType, 18, 2));
-      addRoadStrip(0, 62, 112, 10.0, CS.textures.getMaterial(roadType, 18, 2));
-      addRoadStrip(0, -8, 106, 8.0, CS.textures.getMaterial(roadType, 16, 2));
+      addRoadStrip(0, -60, 114, 10.0, CS.textures.getMaterial(roadType, 18, 2));
+      addRoadStrip(0, 60, 114, 10.0, CS.textures.getMaterial(roadType, 18, 2));
+      addRoadStrip(0, -8, 108, 8.0, CS.textures.getMaterial(roadType, 16, 2));
 
-      // --- CT SPAWN MILITARY COMPOUND (Eliminates the empty northern field!) ---
-      // Rear compound blast wall
-      addBox(0, 0, -74, 94, 5.5, 2.2, houseMat1);
-      // Command supply shed
-      addBox(0, 0, -70, 12, 4.2, 5.5, houseMat2);
-      // Staging transport trucks & generators
-      addParkedVehicle(-24, -66, 0, 0x3b4d3b);
-      addParkedVehicle(24, -66, 0, 0x334155);
-      addGeneratorUnit(-8, 0, -68, 0);
-      addDumpster(8, 0, -68, 0, 0x1e293b);
-      // Left exit to B: Jersey barriers & Pallet stack
-      addJerseyBarrier(-32, 0, -58, 0);
-      addPalletStack(-22, 0, -56, 0.2);
-      // Center exit to Mid: Low wall & sandbags
-      addLowWall(-7, 0, -54, 5.5, 1.25, 0.8, houseMat1);
-      addLowWall(7, 0, -54, 5.5, 1.25, 0.8, houseMat1);
-      addSandbags(0, 0, -52, 0);
-      // Right exit to A: Jersey barriers & Truck
-      addJerseyBarrier(32, 0, -58, 0);
+      // --- 1. CT SPAWN MILITARY COMPOUND & SIGHTLINE BLOCKERS ---
+      addBox(0, 0, -74, 106, 6.0, 2.2, houseMat1);
+      addBox(0, 0, -70, 13, 4.4, 5.5, houseMat2); // CT Command Post
+      // Compound Partition Wings (choke CT exits into 3 structured gates)
+      addArchway(-24, -56, 24, 7.5, 6.2, 2.2, false); // CT West Gate to B
+      addArchway(24, -56, 24, 7.5, 6.2, 2.2, false);  // CT East Gate to A
+      addBox(0, 0, -55, 8.5, 3.6, 2.0, houseMat1);    // Center Blast Shield blocking spawn-to-mid sniping!
+      addLowWall(-8, 0, -54, 4.5, 1.25, 0.8, houseMat2);
+      addLowWall(8, 0, -54, 4.5, 1.25, 0.8, houseMat2);
+
+      // Enterable CT Security Ticket Booth (between CT Spawn & A Site)
+      addEnterableBuilding(28, 0, -45, 10, 4.2, 9, { N: 'door', S: 'door', W: 'window', E: 'door' }, houseMat2, houseMat1, true);
+      addTacticalSign(28, 3.6, -40.3, 0, 'CT CHECKPOINT', '#38bdf8');
+
+      // Enterable CT B-Gate Armory Room (between CT Spawn & B Courtyard)
+      addEnterableBuilding(-28, 0, -45, 10, 4.2, 9, { N: 'door', S: 'door', E: 'window', W: 'door' }, houseMat1, houseMat2, true);
+      addTacticalSign(-28, 3.6, -40.3, 0, 'B GATEHOUSE', '#38bdf8');
+
+      // CT West Guard Depot (fills NW corner at x=-54, z=-56)
+      addEnterableBuilding(-54, 0, -56, 12, 4.2, 10, { S: 'door', E: 'door', N: 'solid', W: 'solid' }, houseMat2, houseMat1, true);
+      // CT East Supply Depot (fills NE corner at x=54, z=-56)
+      addEnterableBuilding(54, 0, -56, 12, 4.2, 10, { S: 'door', W: 'door', N: 'solid', E: 'solid' }, houseMat1, houseMat2, true);
+
+      addParkedVehicle(-18, -64, 0.15, 0x3b4d3b);
+      addParkedVehicle(18, -64, -0.15, 0x334155);
+      addGeneratorUnit(-9, 0, -68, 0);
+      addDumpster(9, 0, -68, 0, 0x1e293b);
       addStreetLamp(-14, -60, 5.5);
       addStreetLamp(14, -60, 5.5);
 
-      // --- T SPAWN BAZAAR COMPOUND (Eliminates the empty southern field!) ---
-      // Rear compound wall
-      addBox(0, 0, 74, 94, 5.5, 2.2, houseMat2);
-      // Insurgent supply truck & bazaar stalls
-      addParkedVehicle(0, 70, Math.PI, 0x7c2d12);
-      addMarketStall(-18, 68, 0, 'awning_red');
-      addMarketStall(18, 68, 0, 'awning_blue');
-      addPalletStack(-30, 0, 66, 0.3);
-      addPalletStack(30, 0, 66, -0.3);
-      addLowWall(-10, 0, 56, 6.0, 1.25, 0.8, houseMat2);
-      addLowWall(10, 0, 56, 6.0, 1.25, 0.8, houseMat2);
-      addSandbags(0, 0, 54, 0);
+      // --- 2. T SPAWN COVERED BAZAAR & ARCADE ---
+      addBox(0, 0, 74, 106, 6.0, 2.2, houseMat2);
+      addBox(0, 0, 56, 9.0, 3.8, 2.2, houseMat2); // T-Spawn Blast Shield (prevents instant Suicide sniping)
+      addArchway(-24, 56, 24, 7.8, 6.2, 2.2, false); // T West Bazaar Gate to B
+      addArchway(24, 56, 24, 7.8, 6.2, 2.2, false);  // T East Bazaar Gate to A-Long
+
+      // Enterable T-Side Carpet Shop (East Bazaar -> Long A)
+      addEnterableBuilding(30, 0, 45, 11, 4.2, 10, { N: 'door', S: 'door', W: 'window', E: 'door' }, houseMat1, houseMat2, true);
+      addTacticalSign(30, 3.6, 39.8, Math.PI, 'EAST BAZAAR', '#f59e0b');
+
+      // Enterable T-Side Spice Warehouse (West Bazaar -> B Tunnels)
+      addEnterableBuilding(-30, 0, 45, 11, 4.2, 10, { N: 'door', S: 'door', E: 'window', W: 'door' }, houseMat2, houseMat1, true);
+      addTacticalSign(-30, 3.6, 39.8, Math.PI, 'WEST BAZAAR', '#f59e0b');
+
+      // SW Oasis Courtyard Pavilion (fills open SW corner at x=-50, z=48)
+      addEnterableBuilding(-50, 0, 48, 12, 4.2, 11, { N: 'door', E: 'door', S: 'window', W: 'solid' }, houseMat1, houseMat2, true);
+      addTacticalSign(-50, 3.6, 42.3, Math.PI, 'OASIS PAVILION', '#f59e0b');
+      // SE Bazaar Arcade Hall (fills open SE corner at x=50, z=48)
+      addEnterableBuilding(50, 0, 48, 12, 4.2, 11, { N: 'door', W: 'door', S: 'window', E: 'solid' }, houseMat2, houseMat1, true);
+
+      addParkedVehicle(0, 69, Math.PI, 0x7c2d12);
+      addMarketStall(-16, 65, 0, 'awning_red');
+      addMarketStall(16, 65, 0, 'awning_blue');
+      addPalletStack(-36, 0, 62, 0.3);
+      addPalletStack(36, 0, 62, -0.3);
+      addLowWall(-9, 0, 53, 4.5, 1.25, 0.8, houseMat1);
+      addLowWall(9, 0, 53, 4.5, 1.25, 0.8, houseMat1);
       addStreetLamp(-14, 60, 5.5);
       addStreetLamp(14, 60, 5.5);
 
-      // Additional Tactical Cover & Urban Props in Transitional Plazas:
-      // CT to A corridor: Checkpoint Jeep & Jersey Barrier
-      addCivCar(20, -50, 0.35, 0x1e3a5f);
-      addJerseyBarrier(28, 0, -48, 0.4);
-      addPalletStack(14, 0, -50, 0);
+      // --- 3. MID CANYON, ENTERABLE SNIPER WINDOW ROOM & UNDERPASS CONNECTOR ---
+      addArchway(0, -34, 30, 7.2, 8.0, 2.6, false); // Mid Double Doors
+      addArchway(0, 45, 30, 7.8, 8.0, 2.6, false);  // T-Spawn to Suicide Arch
 
-      // CT to B corridor: Delivery Van & Dumpster
-      addParkedVehicle(-22, -50, -0.3, 0x334155);
-      addDumpster(-14, 0, -48, 0, 0x0f766e);
-      addJerseyBarrier(-28, 0, -48, -0.4);
+      // West Mid Divider Houses + Walk-Through Connector Hallway (Mid <-> B)
+      addDetailedHouse(-19, -31, 8.5, 8.5, 26, houseMat1, true, 'awning_red');
+      addEnterableBuilding(-19, 0, -9, 9.5, 4.6, 12, { E: 'wideDoor', W: 'wideDoor', N: 'window', S: 'solid' }, houseMat2, houseMat1, true);
+      addTacticalSign(-14.1, 3.8, -9, Math.PI / 2, 'B CONNECTOR', '#facc15');
+      addDetailedHouse(-19, 21, 8.5, 8.8, 34, houseMat2, true, 'awning_blue');
 
-      // T-Side approach to A-Long: Market stall & crates
-      addMarketStall(36, 44, 0.4, 'awning_blue');
-      addPalletStack(26, 0, 48, 0.2);
+      // East Mid Divider Houses + Enterable MID WINDOW SNIPER ROOM (Mirage-style!)
+      addDetailedHouse(19, 24, 8.5, 8.6, 34, houseMat1, true, 'awning_red');
+      addDetailedHouse(19, -43, 7.5, 8.5, 10, houseMat2, true, 'awning_green');
+      // Sniper Nest / Window Room at (19, -28) overlooking Mid!
+      addEnterableBuilding(19, 0, -28, 9.0, 4.4, 9.0, { N: 'door', E: 'door', W: 'window', S: 'solid' }, houseMat1, houseMat2, true);
+      addTacticalSign(14.3, 3.8, -28, -Math.PI / 2, 'SNIPER WINDOW', '#ef4444');
 
-      // T-Side approach to B-Tunnels: Market stall & crates
-      addMarketStall(-36, 44, -0.4, 'awning_red');
-      addPalletStack(-26, 0, 48, -0.2);
-
-      // Long A mid-street cover: Pallet stack & dumpster
-      addDumpster(42, 0, -4, 0.1, 0x1e3a29);
-      addPalletStack(54, 0, -2, -0.2);
-
-      // B-Courtyard extra cover: Palm planter & generator
-      addGeneratorUnit(-40, 0, -20, 0);
-      addLowWall(-56, 0, -44, 5.0, 1.2, 0.8, houseMat2);
-
-
-      // --- MID CANYON & ICONIC XBOX -> SHORT-A CATWALK ---
-      addArchway(0, -34, 30, 7.5, 8.0, 2.6, false); // Mid Double Doors
-      addArchway(0, 46, 30, 8.2, 8.0, 2.6, false);  // T-Spawn to Suicide Arch
-
-      // West Mid Divider Houses
-      addDetailedHouse(-19, -30, 8.5, 8.5, 32, houseMat1, true, 'awning_red');
-      addArchway(-19, -6, 16, 6.8, 7.5, 3.0, true); // Lower Tunnel Connector to B
-      addDetailedHouse(-19, 24, 8.5, 8.8, 36, houseMat2, true, 'awning_blue');
-
-      // East Mid Divider Houses + Short-A Catwalk
-      addDetailedHouse(19, 24, 8.5, 8.6, 36, houseMat1, true, 'awning_red');
-      addDetailedHouse(19, -36, 7.5, 8.5, 22, houseMat2, true, 'awning_green');
-
-      // Mid Canyon Cover Items (no more sniper open field!)
-      addTree(-6, -20, 'palm');
-      addLowWall(5.5, 0, -20, 4.5, 1.2, 0.8, houseMat1); // Mid Half-Wall
-      addShippingContainer(9.5, 0, 4, 0, 'container_teal'); // Lower Mid Container
-      addPalletStack(-8, 0, 2, 0.25);                       // Lower Mid Pallets
-      addCivCar(-4, 30, 0.2, 0x854d0e);                    // Suicide Broken Car
-      addJerseyBarrier(5, 0, 36, 0.3);                     // Suicide Barrier
-      addSandbags(-5, 0, 42, 0);
+      // Staggered Mid Chicanes & Cover (breaks long direct sightline!)
+      addBox(-4.5, 0, -22, 5.2, 2.6, 1.4, houseMat1, true, 'stone'); // Mid Left Pillar Wall
+      addLowWall(4.8, 0, -18, 4.8, 1.25, 0.8, houseMat2);            // Mid Right Half-Wall
+      addTree(-6, -15, 'palm');
+      addShippingContainer(8.5, 0, 4, 0.18, 'container_teal');       // Angled Mid Container
+      addBox(-6.5, 0, 12, 4.8, 2.5, 1.5, houseMat2, true, 'stone');  // Lower Mid Chicane Wall
+      addPalletStack(-7.5, 0, 1, 0.25);
+      addCivCar(-4.5, 28, 0.25, 0x854d0e);
+      addJerseyBarrier(4.5, 0, 34, 0.25);
+      addSandbags(-4.5, 0, 39, 0);
 
       // Xbox crate stack in Mid (climbable onto Short-A Catwalk)
-      addBox(7.5, 0, -4, 3.2, 0.65, 3.2, 'wood_crate', true, 'wood');
-      addBox(11.0, 0, -7.5, 3.6, 1.2, 3.6, 'wood_crate', true, 'wood');
+      addBox(7.5, 0, -5, 3.2, 0.6, 3.2, 'wood_crate', true, 'wood');
+      addBox(11.0, 0, -8.5, 3.6, 1.15, 3.6, 'wood_crate', true, 'wood');
 
-      // Elevated Short-A Catwalk Walkway (y = 1.2m)
+      // Elevated Short-A Catwalk Walkway (y = 1.2m) with North & West Stairs
       addBox(24, 0, -18, 22, 1.2, 7.5, roadType, true, 'stone');
-      addStairs(11.5, -18, 3.6, 6.0, 1.2, 4, 'east', roadType);
-      // Catwalk protective parapet along south edge overlooking Mid (does not block stairs)
-      addBox(24, 1.2, -14.4, 18, 0.95, 0.45, houseMat2, true, 'stone');
-      addSandbags(17, 1.2, -16, 0.4);
+      addStairs(11.2, -18, 3.6, 6.0, 1.2, 4, 'east', roadType);  // West stairs from Mid
+      addStairs(28.0, -23.5, 6.0, 3.4, 1.2, 4, 'south', roadType); // North stairs toward A-Ramp
+      addBox(24, 1.2, -14.4, 18, 1.05, 0.5, houseMat2, true, 'stone');
+      addSandbags(20, 1.2, -16, 0.4);
+      addPillarArcade(18, -14.4, 30, -14.4, 3, 1.2, 3.6, houseMat1);
 
-      // --- BOMBSITE A: NORTH-EAST CITADEL PLATFORM (x = 48, z = -38, y = 1.2m) ---
+      // --- 4. BOMBSITE A: CITADEL PLATFORM + ENTERABLE A-PALACE INTERIOR ---
       this.bombsites.A = { name: 'A', x: 48, y: 1.2, z: -38, radius: 9.0 };
       addBox(48, 0, -38, 22, 1.2, 20, roadType, true, 'stone');
       addStairs(48, -26.0, 8.5, 4.0, 1.2, 5, 'north', roadType); // A-Long Ramp
@@ -1058,156 +1174,198 @@ class MapBuilder {
       decalA.rotation.x = -Math.PI / 2;
       decalA.position.set(48, 1.22, -38);
       mapGroup.add(decalA);
+      addTacticalSign(48, 4.2, -48.2, 0, 'BOMBSITE A - CITADEL', '#ef4444');
 
-      // Default Box setup on A (positioned cleanly around the site center)
-      addBox(43.5, 1.2, -38, 2.6, 2.2, 2.6, 'wood_crate', true, 'wood');
-      addBox(43.5, 1.2, -41.2, 2.4, 1.5, 2.4, 'wood_crate', true, 'wood');
-      addLowWall(54, 1.2, -43, 4.5, 1.2, 0.8, houseMat1); // Goose Wall
+      // Multi-angle A-Site Cover + Roofed Ninja Pergola (offset cleanly so ramp & center are unobstructed)
+      addBox(43.5, 1.2, -42.5, 2.6, 2.2, 2.6, 'wood_crate', true, 'wood');
+      addBox(46.5, 1.2, -42.5, 2.4, 1.5, 2.4, 'wood_crate', true, 'wood');
+      addBox(53.5, 1.2, -43.5, 5.5, 2.4, 0.9, houseMat1, true, 'stone'); // Goose Blast Wall
+      addBox(53.5, 3.6, -42.0, 6.5, 0.45, 5.0, 'wood_crate', true, 'wood'); // Overhead Sun Canopy on A
       addBarrelCluster(54, 1.2, -32);
-      addSandbags(52, 1.2, -32, 0.4);
-      addJerseyBarrier(36, 1.2, -34, 0.3); // Short Ramp Barrier
+      addSandbags(51, 1.2, -31, 0.4);
+      addJerseyBarrier(38, 1.2, -32, 0.3);
 
-      // --- A-LONG BOULEVARD & PIT COVER ---
-      addArchway(48, 20, 34, 8.5, 8.0, 2.8, false); // Long Double Doors
+      // Enterable A-Palace / Pillared Hall (North-East of A-Site, x=62, z=-38)
+      addBox(62, 0, -38, 8, 1.2, 16, roadType, true, 'stone');
+      addEnterableBuilding(62, 1.2, -38, 8, 4.2, 16, { W: 'wideDoor', S: 'open', N: 'window', E: 'solid' }, houseMat2, houseMat1, true);
+
+      // --- 5. A-LONG BOULEVARD, SIDE SHOP & PIT BUNKER ---
+      addArchway(48, 18, 30, 7.6, 8.0, 2.6, false);  // A-Long Double Doors House
+      addArchway(48, -6, 28, 8.2, 7.5, 2.2, false);  // Mid-Long Archway (breaks 90m sniper line!)
       addDetailedHouse(69, -4, 9.0, 9.2, 52, houseMat1, true, 'awning_blue');
 
-      // Long A Corner Cover (Shipping container + dumpster + pallet)
-      addShippingContainer(58, 0, 6, 0, 'container_blue');
-      addDumpster(59, 0, -4, 0, 0x1e3a29);
-      addPalletStack(42, 0, 12, 0);
+      // Enterable A-Long Side Shop (x=34, z=4, flanking route around Long Corner)
+      addEnterableBuilding(34, 0, 4, 9.5, 4.2, 14, { E: 'door', N: 'door', S: 'window', W: 'solid' }, houseMat2, houseMat1, true);
+      addTacticalSign(38.9, 3.5, 4, Math.PI / 2, 'MERCHANT HALL', '#f59e0b');
 
-      // Pit Cover (Civilian sedan + Sandbags + Jersey barrier)
-      addCivCar(56, 36, -0.28, 0x9a7b4f);
-      addSandbags(49, 0, 36, 0.2);
-      addJerseyBarrier(53, 0, 28, 0);
+      // Long A Corner & Pit Cover
+      addShippingContainer(56, 0, 7, -0.15, 'container_blue');
+      addDumpster(58, 0, -2, 0, 0x1e3a29);
+      addPalletStack(42, 0, 11, 0);
+      // Recessed Pit Pillbox / Bunker at South-East Long (x=57, z=33)
+      addEnterableBuilding(57, 0, 33, 9, 3.8, 10, { N: 'window', W: 'door', S: 'door', E: 'solid' }, houseMat1, houseMat2, true);
+      addCivCar(41, 33, 0.2, 0x9a7b4f);
+      addParkedVehicle(53, -16, 0.35, 0x3b4d3b);
+      addLowWall(41, 0, -13, 4.5, 1.25, 0.8, houseMat1);
+      addMarketStall(61, -22, -Math.PI / 2, 'awning_red');
+      addMarketStall(61, 20, -Math.PI / 2, 'awning_green');
 
-      // A-Cross Cover (Delivery van + Low wall)
-      addParkedVehicle(52, -18, 0.35, 0x3b4d3b);
-      addLowWall(41, 0, -14, 5.0, 1.2, 0.8, houseMat1);
-      addSandbags(42, 0, 2, 0);
-
-      // Market stalls along Long A wall
-      addMarketStall(62, -26, -Math.PI / 2, 'awning_red');
-      addMarketStall(62, 18, -Math.PI / 2, 'awning_green');
-
-      // --- BOMBSITE B: NORTH-WEST OASIS FORTRESS (x = -48, z = -32, y = 0.6m) ---
+      // --- 6. BOMBSITE B: FORTRESS COURTYARD, HOOKAH LOUNGE & CATACOMBS ---
       this.bombsites.B = { name: 'B', x: -48, y: 0.6, z: -32, radius: 9.0 };
       addBox(-48, 0, -32, 22, 0.6, 22, roadType, true, 'stone');
       addStairs(-48, -19.5, 8.0, 3.2, 0.6, 3, 'north', roadType);
       addStairs(-35.5, -32, 3.2, 8.0, 0.6, 3, 'west', roadType);
+      addStairs(-48, -44.5, 8.0, 3.2, 0.6, 3, 'south', roadType); // North-side steps onto B platform
 
       const decalB = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), CS.textures.getBombsiteDecalMaterial('B'));
       decalB.rotation.x = -Math.PI / 2;
       decalB.position.set(-48, 0.62, -32);
       mapGroup.add(decalB);
+      addTacticalSign(-48, 4.0, -43.2, 0, 'BOMBSITE B - OASIS', '#ef4444');
 
-      // B-Site Cover: Crates, Broken Humvee, Low Courtyard Wall
+      // B-Site Multi-Layered Cover + Back-Plat Pillbox
       addBox(-54, 0.6, -34, 2.6, 2.2, 2.6, 'wood_crate', true, 'wood');
       addBox(-54, 0.6, -37.2, 2.4, 1.5, 2.4, 'wood_crate', true, 'wood');
-      addLowWall(-36, 0.6, -22, 5.5, 1.2, 0.8, houseMat2);
-      addSandbags(-42, 0.6, -26, -0.35);
+      addBox(-43, 0.6, -26, 4.2, 2.2, 1.0, houseMat1, true, 'stone'); // B Center Pillar Wall
+      addLowWall(-39, 0.6, -23, 4.2, 1.25, 0.8, houseMat2);
+      addSandbags(-42, 0.6, -38, -0.35);
       addBarrelCluster(-55, 0.6, -25);
-      addParkedVehicle(-38, -46, 0.25, 0x7c2d12); // B Humvee
-      addJerseyBarrier(-48, 0.6, -42, 0);
+      addParkedVehicle(-39, -46, 0.25, 0x7c2d12);
+      addPillarArcade(-57, -41, -51, -41, 2, 0.6, 3.8, houseMat2);
 
-      // Roofed Sandstone Upper B-Tunnels Complex (x = -48, z = +8 to +38)
-      addBox(-61, 0, 22, 4.0, 6.2, 32, houseMat1, true, 'stone');
-      addBox(-35, 0, 22, 4.0, 6.2, 32, houseMat1, true, 'stone');
-      addBox(-48, 5.4, 22, 30, 1.0, 32, houseMat2, true, 'stone');
-      [12, 22, 32].forEach(tz => {
-        addBox(-43, 0, tz, 1.8, 5.4, 1.8, houseMat2, true, 'stone');
-        addBox(-53, 0, tz, 1.8, 5.4, 1.8, houseMat2, true, 'stone');
+      // Enterable Hookah Lounge / B-Window Building between B-Tunnels & B-Site
+      addEnterableBuilding(-36, 0, -8, 11, 4.4, 12, { N: 'door', W: 'door', S: 'door', E: 'door' }, houseMat2, houseMat1, true);
+      addTacticalSign(-36, 3.8, -14.2, Math.PI, 'HOOKAH LOUNGE', '#f59e0b');
+      addBox(-56, 0, -8, 7.5, 3.8, 2.0, houseMat1, true, 'stone'); // West B-Tunnels Choke Wall
+      addGeneratorUnit(-55, 0, -14, 0.2);
+
+      // Roofed Sandstone Upper B-Tunnels Complex (x = -48, z = +6 to +36) with Interior Partition Walls
+      addBox(-61, 0, 21, 4.0, 6.2, 30, houseMat1, true, 'stone');
+      addBox(-35, 0, 21, 4.0, 6.2, 30, houseMat1, true, 'stone');
+      addBox(-48, 5.4, 21, 30, 1.0, 30, houseMat2, true, 'stone');
+      [11, 21, 31].forEach(tz => {
+        addBox(-42, 0, tz, 1.8, 5.4, 1.8, houseMat2, true, 'stone');
+        addBox(-54, 0, tz, 1.8, 5.4, 1.8, houseMat2, true, 'stone');
       });
-      // Tunnels internal cover
-      addPalletStack(-48, 0, 16, 0.2);
-      addBarrelCluster(-45, 0, 30);
+      // Interior B-Tunnels Side Chicanes (staggered on left/right so center aisle stays navigable)
+      addBox(-55, 0, 16, 4.2, 2.6, 1.4, houseMat1, true, 'stone');
+      addBox(-41, 0, 26, 4.2, 2.6, 1.4, houseMat2, true, 'stone');
+      addBarrelCluster(-55, 0, 28);
       addDetailedHouse(-69, -22, 9.0, 9.0, 42, houseMat2, true, 'awning_red');
 
-      // Trees, Palms & Vegetation
-      for (let z = -44; z <= 44; z += 18) {
+      // Trees, Palms & Overhead Lantern Cables
+      for (let z = -44; z <= 44; z += 16) {
         addOverheadCable(-14, 7.2, z, 14, 7.2, z + 2, true);
       }
       [
-        [-9, -46], [9, -46], [-9, 42], [9, 42],
-        [32, 42], [60, 14], [60, -46], [30, -48],
-        [-30, 44], [-62, 46], [-30, -48], [-62, -52],
-        [-12, 12], [12, -24], [34, 8], [-34, -10]
+        [-10, -45], [10, -45], [-10, 42], [10, 42],
+        [60, 14], [60, -48], [-62, 46], [-62, -52],
+        [-11, 14], [11, -24], [-48, -50]
       ].forEach(([px, pz], idx) => addTree(px, pz, idx % 3 === 0 ? 'olive' : 'palm'));
 
-      [[-11, -18], [11, -18], [-11, 18], [11, 18], [28, -14], [-28, -14], [-8, -68], [8, -68], [-8, 68], [8, 68]].forEach(([bx, bz]) => {
+      [[-11, -18], [11, -18], [-11, 18], [11, 18], [28, -12], [-28, -18], [-8, -68], [8, -68], [-8, 68], [8, 68]].forEach(([bx, bz]) => {
         addBushCluster(bx, bz, 1.25);
       });
 
-      // 10 CT Spawns, 10 T Spawns & 18 Distributed Arena/DM Respawn Points
+      // Spawns
       this.spawns.CT = [
         { x: 0,   y: 0, z: -64, rotY: Math.PI },
         { x: -7,  y: 0, z: -66, rotY: Math.PI },
         { x: 7,   y: 0, z: -66, rotY: Math.PI },
-        { x: -16, y: 0, z: -64, rotY: Math.PI },
-        { x: 16,  y: 0, z: -64, rotY: Math.PI },
-        { x: -28, y: 0, z: -62, rotY: Math.PI },
-        { x: 28,  y: 0, z: -62, rotY: Math.PI },
-        { x: -42, y: 0, z: -58, rotY: Math.PI },
-        { x: 42,  y: 0, z: -58, rotY: Math.PI },
-        { x: 0,   y: 0, z: -54, rotY: Math.PI }
+        { x: -15, y: 0, z: -62, rotY: Math.PI },
+        { x: 15,  y: 0, z: -62, rotY: Math.PI },
+        { x: -24, y: 0, z: -62, rotY: Math.PI },
+        { x: 24,  y: 0, z: -62, rotY: Math.PI },
+        { x: -36, y: 0, z: -60, rotY: Math.PI },
+        { x: 36,  y: 0, z: -60, rotY: Math.PI },
+        { x: 0,   y: 0, z: -59, rotY: Math.PI }
       ];
       this.spawns.T = [
-        { x: 0,   y: 0, z: 64, rotY: 0 },
-        { x: -7,  y: 0, z: 66, rotY: 0 },
-        { x: 7,   y: 0, z: 66, rotY: 0 },
-        { x: -16, y: 0, z: 64, rotY: 0 },
-        { x: 16,  y: 0, z: 64, rotY: 0 },
-        { x: -28, y: 0, z: 62, rotY: 0 },
-        { x: 28,  y: 0, z: 62, rotY: 0 },
-        { x: -46, y: 0, z: 58, rotY: 0 },
-        { x: 46,  y: 0, z: 58, rotY: 0 },
-        { x: 0,   y: 0, z: 58, rotY: 0 }
+        { x: 0,   y: 0, z: 63, rotY: 0 },
+        { x: -7,  y: 0, z: 65, rotY: 0 },
+        { x: 7,   y: 0, z: 65, rotY: 0 },
+        { x: -15, y: 0, z: 62, rotY: 0 },
+        { x: 15,  y: 0, z: 62, rotY: 0 },
+        { x: -24, y: 0, z: 62, rotY: 0 },
+        { x: 24,  y: 0, z: 62, rotY: 0 },
+        { x: -42, y: 0, z: 58, rotY: 0 },
+        { x: 42,  y: 0, z: 58, rotY: 0 },
+        { x: 0,   y: 0, z: 60, rotY: 0 }
       ];
       this.spawns.DM = [
-        { x: 0, y: 0, z: -22, rotY: 0 },
-        { x: 0, y: 0, z: 22, rotY: Math.PI },
-        { x: 48, y: 1.2, z: -35, rotY: 0 },
-        { x: 48, y: 0, z: 6, rotY: Math.PI },
-        { x: 48, y: 0, z: 34, rotY: Math.PI },
-        { x: 24, y: 1.2, z: -18, rotY: -Math.PI / 2 },
+        { x: 0,   y: 0,   z: -28, rotY: 0 },
+        { x: 2,   y: 0,   z: 20,  rotY: Math.PI },
+        { x: 48,  y: 1.2, z: -35, rotY: 0 },
+        { x: 48,  y: 0,   z: 2,   rotY: Math.PI },
+        { x: 48,  y: 0,   z: 22,  rotY: Math.PI },
+        { x: 24,  y: 1.2, z: -18, rotY: -Math.PI / 2 },
         { x: -48, y: 0.6, z: -30, rotY: 0 },
-        { x: -48, y: 0, z: -6, rotY: Math.PI },
-        { x: -48, y: 0, z: 22, rotY: Math.PI },
-        { x: -28, y: 0, z: -8, rotY: Math.PI / 2 },
-        { x: 28, y: 0, z: 8, rotY: -Math.PI / 2 },
-        { x: -32, y: 0, z: -56, rotY: Math.PI },
-        { x: 32, y: 0, z: -56, rotY: Math.PI },
-        { x: -32, y: 0, z: 56, rotY: 0 },
-        { x: 32, y: 0, z: 56, rotY: 0 },
-        { x: 58, y: 0, z: -14, rotY: Math.PI / 2 },
-        { x: -58, y: 0, z: -14, rotY: -Math.PI / 2 },
-        { x: -4, y: 0, z: -4, rotY: 0 }
+        { x: -48, y: 0,   z: -3,  rotY: Math.PI },
+        { x: -48, y: 0,   z: 21,  rotY: Math.PI },
+        { x: -19, y: 0,   z: -9,  rotY: Math.PI / 2 },
+        { x: 34,  y: 0,   z: 4,   rotY: -Math.PI / 2 },
+        { x: -24, y: 0,   z: -52, rotY: Math.PI },
+        { x: 24,  y: 0,   z: -52, rotY: Math.PI },
+        { x: -24, y: 0,   z: 52,  rotY: 0 },
+        { x: 24,  y: 0,   z: 52,  rotY: 0 },
+        { x: 62,  y: 1.2, z: -38, rotY: -Math.PI / 2 },
+        { x: -36, y: 0,   z: -8,  rotY: 0 },
+        { x: -2,  y: 0,   z: -5,  rotY: 0 }
       ];
-      this.waypoints = [
-        { id: 'ct_spawn', x: 0, z: -62, lane: 'mid' },
-        { id: 'ct_b', x: -36, z: -56, lane: 'B' },
-        { id: 'ct_a', x: 36, z: -52, lane: 'A' },
-        { id: 'b_site', x: -48, z: -30, lane: 'B', isSite: 'B' },
-        { id: 'b_front', x: -46, z: -10, lane: 'B' },
-        { id: 'b_tunnels', x: -48, z: 22, lane: 'B' },
-        { id: 't_b_ent', x: -42, z: 54, lane: 'B' },
-        { id: 'mid_north', x: 0, z: -40, lane: 'mid' },
-        { id: 'mid_center', x: 0, z: -8, lane: 'mid' },
-        { id: 'mid_south', x: 0, z: 28, lane: 'mid' },
-        { id: 't_spawn', x: 0, z: 62, lane: 'mid' },
-        { id: 'a_site', x: 48, z: -35, lane: 'A', isSite: 'A' },
-        { id: 'a_short', x: 26, z: -18, lane: 'A' },
-        { id: 'a_long', x: 48, z: 12, lane: 'A' },
-        { id: 't_a_ent', x: 44, z: 52, lane: 'A' }
+
+      // Connected Tactical Nav-Graph for Smart Bot Pathfinding
+      this.navNodes = [
+        { id: 'ct_spawn',   x: 0,   z: -62, lane: 'mid', links: ['ct_b_gate', 'ct_a_gate'] },
+        { id: 'ct_b_gate',  x: -24, z: -52, lane: 'B',   links: ['ct_spawn', 'ct_mid', 'ct_b_room', 'b_back'] },
+        { id: 'ct_b_room',  x: -28, z: -45, lane: 'B',   links: ['ct_b_gate', 'b_ramp_e'] },
+        { id: 'b_back',     x: -48, z: -48, lane: 'B',   links: ['ct_b_gate', 'b_site'] },
+        { id: 'b_ramp_e',   x: -32, z: -32, lane: 'B',   links: ['ct_b_room', 'b_site', 'b_hookah'] },
+        { id: 'b_site',     x: -48, z: -31, lane: 'B',   isSite: 'B', links: ['b_back', 'b_ramp_e', 'b_front'] },
+        { id: 'b_front',    x: -48, z: -15, lane: 'B',   links: ['b_site', 'b_tun_n', 'b_hookah'] },
+        { id: 'b_hookah',   x: -36, z: -8,  lane: 'B',   links: ['b_ramp_e', 'b_front', 'b_conn', 'b_tun_n'] },
+        { id: 'b_conn',     x: -19, z: -9,  lane: 'mid', links: ['b_hookah', 'mid_center'] },
+        { id: 'b_tun_n',    x: -48, z: 6,   lane: 'B',   links: ['b_front', 'b_hookah', 'b_tun_mid'] },
+        { id: 'b_tun_mid',  x: -48, z: 21,  lane: 'B',   links: ['b_tun_n', 'b_tun_s'] },
+        { id: 'b_tun_s',    x: -48, z: 36,  lane: 'B',   links: ['b_tun_mid', 't_b_shop', 't_b_pav'] },
+        { id: 't_b_pav',    x: -50, z: 48,  lane: 'B',   links: ['b_tun_s', 't_b_gate'] },
+        { id: 't_b_shop',   x: -30, z: 45,  lane: 'B',   links: ['b_tun_s', 't_b_gate'] },
+        { id: 't_b_gate',   x: -24, z: 58,  lane: 'B',   links: ['t_b_shop', 't_b_pav', 'mid_arch', 't_spawn'] },
+        { id: 'ct_mid',     x: 0,   z: -42, lane: 'mid', links: ['ct_b_gate', 'ct_a_gate', 'mid_doors'] },
+        { id: 'mid_win_n',  x: 19,  z: -35, lane: 'mid', links: ['mid_window', 'a_ramp_w'] },
+        { id: 'mid_window', x: 19,  z: -28, lane: 'mid', links: ['mid_win_n', 'a_cat_n'] },
+        { id: 'mid_doors',  x: 0,   z: -28, lane: 'mid', links: ['ct_mid', 'mid_center'] },
+        { id: 'mid_center', x: -1,  z: -9,  lane: 'mid', links: ['mid_doors', 'b_conn', 'a_xbox', 'mid_south'] },
+        { id: 'mid_south',  x: 1,   z: 20,  lane: 'mid', links: ['mid_center', 'mid_arch'] },
+        { id: 'mid_arch',   x: 0,   z: 48,  lane: 'mid', links: ['mid_south', 't_b_gate', 't_a_gate'] },
+        { id: 't_spawn',    x: 0,   z: 62,  lane: 'mid', links: ['t_b_gate', 't_a_gate'] },
+        { id: 'a_xbox',     x: 8,   z: -18, lane: 'A',   links: ['mid_center', 'a_short'] },
+        { id: 'a_short',    x: 24,  z: -18, lane: 'A',   links: ['a_xbox', 'a_cat_n'] },
+        { id: 'a_cat_n',    x: 28,  z: -28, lane: 'A',   links: ['a_short', 'mid_window', 'a_ramp_w'] },
+        { id: 'ct_a_gate',  x: 24,  z: -52, lane: 'A',   links: ['ct_spawn', 'ct_mid', 'ct_a_booth'] },
+        { id: 'ct_a_booth', x: 28,  z: -45, lane: 'A',   links: ['ct_a_gate', 'a_ramp_w'] },
+        { id: 'a_ramp_w',   x: 31,  z: -38, lane: 'A',   links: ['ct_a_booth', 'mid_win_n', 'a_cat_n', 'a_site'] },
+        { id: 'a_site',     x: 48,  z: -38, lane: 'A',   isSite: 'A', links: ['a_ramp_w', 'a_palace', 'a_cross'] },
+        { id: 'a_palace',   x: 62,  z: -38, lane: 'A',   links: ['a_site'] },
+        { id: 'a_cross',    x: 48,  z: -21, lane: 'A',   links: ['a_site', 'a_long_n'] },
+        { id: 'a_long_n',   x: 48,  z: -1,  lane: 'A',   links: ['a_cross', 'a_shop', 'a_long_doors'] },
+        { id: 'a_shop',     x: 34,  z: 4,   lane: 'A',   links: ['a_long_n', 'a_long_doors'] },
+        { id: 'a_long_doors', x: 48, z: 14, lane: 'A',   links: ['a_long_n', 'a_shop', 'a_long_s'] },
+        { id: 'a_long_s',   x: 48,  z: 24,  lane: 'A',   links: ['a_long_doors', 'a_long_pit'] },
+        { id: 'a_long_pit', x: 48,  z: 38,  lane: 'A',   links: ['a_long_s', 't_a_shop'] },
+        { id: 't_a_shop',   x: 30,  z: 45,  lane: 'A',   links: ['a_long_pit', 't_a_gate'] },
+        { id: 't_a_gate',   x: 24,  z: 58,  lane: 'A',   links: ['t_a_shop', 'mid_arch', 't_spawn'] }
       ];
+      this.waypoints = this.navNodes;
     } else if (mapId === 'de_inferno_plaza' || mapId === 'de_foundry') {
-      
+      // ======================================================================
+      // MAP 2: DE_INFERNO_PLAZA (ITALIAN OLD TOWN, CHURCH, APTS & BANANA)
+      // ======================================================================
       addBox(76, 0, 0, 12, wallH, 168, 'brick_wall');
       addBox(-76, 0, 0, 12, wallH, 168, 'stucco_white');
       addBox(0, 0, -79, 168, wallH, 8, 'brick_wall');
       addBox(0, 0, 79, 168, wallH, 8, 'stucco_white');
 
-      // Roads
+      // Cobblestone Streets
       addRoadStrip(-6, 0, 10.0, 142);
       addRoadStrip(22, 16, 9.0, 96);
       addRoadStrip(-44, 0, 11.5, 130);
@@ -1225,26 +1383,53 @@ class MapBuilder {
         mapGroup.add(gPatch);
       });
 
-      // --- CT SPAWN PIAZZA (Eliminates empty north field) ---
-      addBox(0, 0, -74, 98, 5.5, 2.2, 'brick_wall');
-      addParkedVehicle(-26, -66, 0.1, 0x1e3a8a);
-      addParkedVehicle(26, -66, -0.1, 0x0f766e);
-      addLowWall(-8, 0, -56, 6.0, 1.2, 0.8, 'brick_wall');
-      addLowWall(8, 0, -56, 6.0, 1.2, 0.8, 'brick_wall');
-      addJerseyBarrier(-34, 0, -60, 0);
-      addJerseyBarrier(34, 0, -60, 0);
+      // --- 1. CT SPAWN PIAZZA, ARCHES & ENTERABLE LIBRARY ---
+      addBox(0, 0, -74, 106, 5.8, 2.2, 'brick_wall');
+      addBox(-3, 0, -56, 8.5, 3.8, 2.0, 'brick_wall'); // CT Spawn Blast Shield blocking Mid sightline
+      addArchway(-24, -56, 24, 7.6, 6.2, 2.2, false);  // CT West Arch to B
+      addArchway(24, -56, 24, 7.6, 6.2, 2.2, false);   // CT East Arch to Library / A
+
+      // Enterable CT Library Hall (between CT Spawn & Bombsite A, x=32, z=-44)
+      addEnterableBuilding(32, 0, -44, 12, 4.4, 10, { N: 'door', S: 'door', W: 'window', E: 'door' }, 'stucco_white', 'brick_wall', true);
+      addTacticalSign(32, 3.8, -38.8, 0, 'OLD LIBRARY', '#38bdf8');
+      // Enterable CT East Arch Guardhouse (fills NE corner at x=54, z=-52)
+      addEnterableBuilding(54, 0, -52, 11, 4.4, 10, { S: 'door', W: 'door', N: 'solid', E: 'solid' }, 'brick_wall', 'stucco_white', true);
+
+      // Enterable CT Construction / Church Ruins (between CT Spawn & Bombsite B, x=-24, z=-45)
+      addEnterableBuilding(-24, 0, -45, 11, 4.4, 11, { N: 'door', W: 'wideDoor', S: 'window', E: 'door' }, 'brick_wall', 'stucco_white', true);
+      addTacticalSign(-24, 3.8, -39.3, 0, 'CHURCH HALL', '#38bdf8');
+
+      addParkedVehicle(-18, -65, 0.1, 0x1e3a8a);
+      addParkedVehicle(18, -65, -0.1, 0x0f766e);
+      addLowWall(8, 0, -54, 4.5, 1.25, 0.8, 'brick_wall');
       addStreetLamp(-12, -62, 5.2);
       addStreetLamp(12, -62, 5.2);
 
-      // --- T SPAWN COURTYARD (Eliminates empty south field) ---
-      addBox(0, 0, 74, 98, 5.5, 2.2, 'stucco_white');
-      addCivCar(0, 70, Math.PI, 0x991b1b);
-      addMarketStall(-20, 66, 0, 'awning_blue');
-      addMarketStall(20, 66, 0, 'awning_red');
-      addPalletStack(-32, 0, 62, 0.2);
-      addPalletStack(36, 0, 64, -0.2);
-      addLowWall(-10, 0, 56, 6.0, 1.2, 0.8, 'brick_wall');
-      addLowWall(10, 0, 56, 6.0, 1.2, 0.8, 'brick_wall');
+      // --- 2. T SPAWN COURTYARD, WINE CELLAR & VILLA GATEHOUSE ---
+      addBox(0, 0, 74, 106, 5.8, 2.2, 'stucco_white');
+      addBox(-3, 0, 56, 8.5, 3.8, 2.0, 'stucco_white'); // T Spawn Center Shield
+      addArchway(-24, 56, 24, 7.8, 6.2, 2.2, false);    // T West Gate to Banana
+      addArchway(24, 56, 24, 7.8, 6.2, 2.2, false);     // T East Gate to Alt-Mid / A
+
+      // Enterable T-Side Wine Cellar / Tavern (fills the huge SW open field at x=-26, z=43!)
+      addEnterableBuilding(-26, 0, 43, 13, 4.4, 12, { S: 'door', W: 'wideDoor', E: 'door', N: 'door' }, 'brick_wall', 'stucco_white', true);
+      addTacticalSign(-26, 3.8, 36.8, Math.PI, 'WINE TAVERN', '#f59e0b');
+      addPillarArcade(-44, 46, -34, 46, 3, 0, 4.0, 'brick_wall'); // Loggia arches into Banana
+      // Enterable SW Bell Gatehouse (fills SW corner at x=-52, z=50)
+      addEnterableBuilding(-52, 0, 50, 11, 4.2, 10, { E: 'door', N: 'door', S: 'window', W: 'solid' }, 'stucco_white', 'brick_wall', true);
+
+      // Enterable T-Side Villa Gatehouse (fills SE open area at x=34, z=44!)
+      addEnterableBuilding(34, 0, 44, 12, 4.4, 11, { S: 'door', N: 'door', W: 'window', E: 'door' }, 'stucco_white', 'brick_wall', true);
+      addTacticalSign(34, 3.8, 38.3, Math.PI, 'VILLA LOGGIA', '#f59e0b');
+      // Enterable SE Carriage Barn (fills open SE corner at x=54, z=36!)
+      addEnterableBuilding(54, 0, 36, 11, 4.2, 11, { W: 'door', N: 'door', S: 'window', E: 'solid' }, 'brick_wall', 'stucco_white', true);
+      addTacticalSign(54, 3.6, 30.3, 0, 'CARRIAGE BARN', '#f59e0b');
+
+      addCivCar(0, 69, Math.PI, 0x991b1b);
+      addMarketStall(-16, 67, 0, 'awning_blue');
+      addMarketStall(16, 67, 0, 'awning_red');
+      addPalletStack(-36, 0, 62, 0.2);
+      addPalletStack(36, 0, 62, -0.2);
 
       // 24m Bell Tower near B
       addBox(-62, 0, -54, 9.5, 22.0, 9.5, 'brick_wall', true, 'stone');
@@ -1253,14 +1438,15 @@ class MapBuilder {
       spire.rotation.y = Math.PI / 4;
       mapGroup.add(spire);
 
-      // --- BOMBSITE B: FOUNTAIN PIAZZA (x = -44, z = -44) ---
+      // --- 3. BOMBSITE B: FOUNTAIN PIAZZA, COFFINS & DARK ALCOVE (x = -44, z = -40) ---
       this.bombsites.B = { name: 'B', x: -44, y: 0.0, z: -40, radius: 9.5 };
       const decalB = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), CS.textures.getBombsiteDecalMaterial('B'));
       decalB.rotation.x = -Math.PI / 2;
       decalB.position.set(-44, 0.03, -40);
       mapGroup.add(decalB);
+      addTacticalSign(-44, 4.2, -55.0, 0, 'BOMBSITE B - PIAZZA', '#ef4444');
 
-      // Stone Water Fountain offset slightly to back corner
+      // Stone Water Fountain offset to back-north of B
       const fMat = CS.textures.getMaterial('cobble_floor', 2, 2);
       const waterMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.1, metalness: 0.85 });
       const basin = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.2, 1.0, 18), fMat);
@@ -1283,101 +1469,96 @@ class MapBuilder {
       }
       this.colliders.push({ minX: -47.2, maxX: -40.8, minY: 0, maxY: 1.2, minZ: -51.2, maxZ: -44.8, surface: 'stone' });
 
-      // B-Site Cover (Coffins, Newbox, Dark Corner)
-      addBox(-53, 0, -42, 2.8, 2.2, 2.8, 'wood_crate', true, 'wood');
-      addBox(-36, 0, -48, 3.0, 1.8, 2.4, 'wood_crate', true, 'wood');
-      addLowWall(-44, 0, -32, 6.0, 1.2, 0.8, 'brick_wall');
-      addSandbags(-37, 0, -35, 0);
+      // B-Site Multi-Layered Cover + Roofed Dark Alcove on West side
+      addEnterableBuilding(-56, 0, -39, 7.0, 4.0, 10.0, { E: 'open', S: 'window', N: 'door', W: 'solid' }, 'brick_wall', 'stucco_white', true);
+      addBox(-36, 0, -48, 3.0, 2.0, 2.4, 'wood_crate', true, 'wood'); // Coffins stack
+      addBox(-48, 0, -33, 4.5, 2.2, 1.2, 'brick_wall', true, 'stone'); // First Oranges Pillar Wall
+      addLowWall(-39, 0, -33, 4.5, 1.25, 0.8, 'brick_wall');
+      addSandbags(-36, 0, -37, 0);
+      addPillarArcade(-52, -55, -36, -55, 4, 0, 4.2, 'brick_wall'); // North Coffins Colonnade
 
-      // --- BANANA ALLEY (x = -44, z = -24 to +42) ---
-      addDetailedHouse(-25, -14, 8.5, 8.5, 42, houseMat1, true, 'awning_red');
+      // --- 4. BANANA ALLEY WITH STAGGERED HALF-WALL CHICANES & PILLARS ---
+      addDetailedHouse(-25, -10, 8.5, 8.5, 44, houseMat1, true, 'awning_red');
       addDetailedHouse(-64, 4, 8.5, 8.8, 56, houseMat2, true, 'awning_green');
-      addArchway(-44, -22, 26, 8.2, 7.5, 2.4, false);
-      addArchway(-44, 14, 26, 8.5, 7.5, 2.4, false);
+      addArchway(-44, -22, 26, 8.0, 7.5, 2.4, false);
+      addArchway(-44, 14, 26, 8.2, 7.5, 2.4, false);
 
-      // Banana Car, Wood Logs, Dumpster & Barricades
-      addCivCar(-40, -10, 0.38, 0x991b1b);
-      addBox(-39, 0, 26, 4.2, 1.6, 2.2, 'wood_crate', true, 'wood');
-      addDumpster(-48, 0, 6, 0.2, 0x1e3a29);
-      addJerseyBarrier(-42, 0, -2, 0);
-      addSandbags(-46, 0, 18, 0);
+      // Staggered Banana Chicanes (classic Inferno half-wall + car + wood logs)
+      addCivCar(-39.5, -10, 0.32, 0x991b1b);
+      addBox(-48.5, 0, -3, 5.2, 2.4, 1.3, 'brick_wall', true, 'stone'); // Banana Half-Wall Chicane W
+      addLowWall(-39.5, 0, 5, 4.8, 1.25, 0.8, 'stucco_white');          // Banana Half-Wall Chicane E
+      addDumpster(-49, 0, 8, 0.2, 0x1e3a29);
+      addBox(-39, 0, 24, 4.2, 1.6, 2.2, 'wood_crate', true, 'wood');   // Banana Wood Logs
+      addLowWall(-48.5, 0, 31, 5.0, 1.25, 0.8, 'brick_wall');
 
-      // --- DUAL MID, CANAL BRIDGE & BALCONY ---
+      // --- 5. DUAL MID, CANAL BRIDGE, BOILER ROOM & APARTMENTS ---
       addBox(-6, 0, 2, 9.5, 0.75, 10.0, roadType, true, 'stone');
       addStairs(-6, 8.5, 9.5, 3.2, 0.75, 4, 'north', roadType);
       addStairs(-6, -4.5, 9.5, 3.2, 0.75, 4, 'south', roadType);
+      addStairs(0.2, 2, 3.0, 5.0, 0.75, 4, 'west', roadType); // East steps connecting Bridge to Boiler Room!
       addBox(-10.4, 0.75, 2, 0.6, 0.85, 9.5, 'cobble_floor', true, 'stone');
-      addBox(-1.6, 0.75, 2, 0.6, 0.85, 9.5, 'cobble_floor', true, 'stone');
 
-      addDetailedHouse(8, 20, 7.5, 8.4, 34, houseMat2, true, 'awning_blue');
-      addDetailedHouse(8, -28, 7.5, 8.2, 28, houseMat1, true, 'awning_red');
+      // Divider Houses with Enterable BOILER ROOM Connector between Mid (x=-6) and Apartments (x=22)!
+      addDetailedHouse(8, 23, 7.5, 8.4, 26, houseMat2, true, 'awning_blue');
+      addEnterableBuilding(8, 0, 2, 9.0, 4.4, 10.0, { W: 'door', E: 'door', N: 'window', S: 'solid' }, 'brick_wall', 'stucco_white', true);
+      addTacticalSign(3.3, 3.8, 2, -Math.PI / 2, 'BOILER ROOM', '#facc15');
+      addDetailedHouse(8, -22, 7.5, 8.2, 28, houseMat1, true, 'awning_red');
 
-      // Mid cover items
-      addLowWall(-6, 0, 24, 4.5, 1.2, 0.8, 'brick_wall');
-      addPalletStack(-8, 0, -14, 0.2);
-      addDumpster(-4, 0, -24, 0.3, 0x1e293b);
+      // Top-Mid Archway & Chicanes (breaks long Mid sniper line)
+      addArchway(-6, -34, 22, 7.5, 7.5, 2.4, false);
+      addArchway(-6, 36, 22, 7.8, 7.5, 2.4, false);
+      addBox(-9.5, 0, -16, 4.4, 2.4, 1.3, 'brick_wall', true, 'stone');
+      addLowWall(-2.5, 0, -24, 4.4, 1.25, 0.8, 'stucco_white');
+      addLowWall(-9.0, 0, 22, 4.5, 1.25, 0.8, 'brick_wall');
+      addPalletStack(-2.5, 0, 16, 0.2);
 
-      // Walkable Apartments Terrace
-      addBox(26, 0, -2, 14, 1.4, 24, houseMat2, true, 'stone');
-      addStairs(26, 12.0, 6.0, 4.2, 1.4, 6, 'north', roadType);
-      addStairs(35.0, -2, 4.2, 6.0, 1.4, 6, 'east', roadType);
-      addSandbags(20, 1.4, -8, 1.57);
+      // Walkable Apartments Terrace (x = 25, z = -4, y = 1.4m) with Enterable Upper Balcony Room!
+      addBox(25, 0, -4, 13, 1.4, 24, houseMat2, true, 'stone');
+      addStairs(25, 10.0, 6.0, 4.2, 1.4, 6, 'north', roadType);  // South Stairs up from Alt-Mid
+      addStairs(33.5, -4, 4.2, 6.0, 1.4, 6, 'west', roadType);   // East Stairs up onto Apts from A-Short
+      addStairs(25, -18.0, 6.0, 4.2, 1.4, 6, 'south', roadType); // North Stairs down toward Arch/CT
+      addEnterableBuilding(25, 1.4, -4, 11, 3.8, 14, { S: 'door', N: 'door', E: 'wideDoor', W: 'window' }, 'stucco_white', 'brick_wall', true);
+      addTacticalSign(30.7, 4.6, -4, Math.PI / 2, 'APARTMENTS', '#facc15');
 
-      // --- BOMBSITE A: EAST VILLA COLONNADE COURTYARD (x = 48, z = -18, y = 0.6m) ---
-      this.bombsites.A = { name: 'A', x: 48, y: 0.6, z: -15, radius: 9.5 };
+      // --- 6. BOMBSITE A: VILLA COLONNADE, GRAVEYARD & BALCONY PIT ---
+      this.bombsites.A = { name: 'A', x: 48, y: 0.6, z: -16, radius: 9.5 };
       addBox(48, 0, -18, 22, 0.6, 22, roadType, true, 'stone');
       addStairs(48, -5.5, 8.0, 3.2, 0.6, 3, 'north', roadType);
       addStairs(35.5, -18, 3.2, 8.0, 0.6, 3, 'east', roadType);
+      addStairs(48, -30.5, 8.0, 3.2, 0.6, 3, 'south', roadType);
 
       const decalA = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), CS.textures.getBombsiteDecalMaterial('A'));
       decalA.rotation.x = -Math.PI / 2;
-      decalA.position.set(48, 0.62, -15);
+      decalA.position.set(48, 0.62, -16);
       mapGroup.add(decalA);
+      addTacticalSign(48, 4.2, -29.2, 0, 'BOMBSITE A - VILLA', '#ef4444');
 
-      [[-26, 40], [-26, 56], [-10, 40], [-10, 56]].forEach(([pz, px]) => {
-        addBox(px, 0.6, pz, 1.6, 5.2, 1.6, 'stucco_white', true, 'stone');
+      // Villa Roofed Gazebo / Colonnade on A-Site
+      [[-25, 41], [-25, 55], [-11, 41], [-11, 55]].forEach(([pz, px]) => {
+        addBox(px, 0.6, pz, 1.5, 4.8, 1.5, 'stucco_white', true, 'stone');
       });
-      // Default crates on A
-      addBox(44, 0.6, -18, 2.8, 2.2, 2.8, 'wood_crate', true, 'wood');
+      addBox(48, 5.4, -22, 16, 0.5, 8, 'brick_wall', true, 'stone'); // Overhead Pergola Roof over back of A
+      addBox(44, 0.6, -21, 2.6, 2.2, 2.6, 'wood_crate', true, 'wood');
+      addBox(52, 0.6, -13, 4.2, 2.0, 1.2, 'stucco_white', true, 'stone');
       addBarrelCluster(54, 0.6, -24);
+
+      // Enterable Graveyard Crypt / Pit Room (East of A-Site, x=56, z=12)
+      addEnterableBuilding(56, 0, 12, 11, 4.2, 12, { N: 'door', W: 'door', S: 'door', E: 'solid' }, 'brick_wall', 'stucco_white', true);
+      addTacticalSign(56, 3.6, 5.8, 0, 'PIT CRYPT', '#ef4444');
+
       addArchway(48, -38, 28, 8.0, 7.8, 2.6, false);
       addDetailedHouse(69, -18, 8.5, 9.0, 48, houseMat1, true, 'awning_green');
-      addCivCar(48, 22, -0.2, 0x1e3a8a);
-      addLowWall(48, 0, 4, 5.5, 1.2, 0.8, 'stucco_white');
-
-      // Additional Italian Piazza & Banana cover:
-      addMarketStall(-20, -52, 0, 'awning_red');
-      addMarketStall(20, -52, 0, 'awning_blue');
-      addCivCar(-16, -48, 0.4, 0x854d0e);
-      addCivCar(16, -48, -0.4, 0x1e3a5f);
-      addPalletStack(-32, 0, -42, 0.2);
-      addPalletStack(32, 0, -42, -0.2);
-
-      // Banana Alley extra cover
-      addLowWall(-48, 0, 32, 5.5, 1.2, 0.8, 'brick_wall');
-      addJerseyBarrier(-38, 0, 36, 0.3);
-      addDumpster(-46, 0, -14, 0.2, 0x1e3a29);
-
-      // Mid / Alt-Mid extra cover
-      addMarketStall(22, 34, 0, 'awning_green');
-      addPalletStack(22, 0, 2, 0.3);
-      addJerseyBarrier(-10, 0, 12, 0);
-      addJerseyBarrier(-2, 0, -18, 0);
-
-      // A-Courtyard extra cover
-      addPalletStack(56, 0, 10, 0.2);
-      addDumpster(42, 0, -26, 0.2, 0x1e293b);
-      addJerseyBarrier(56, 0, -32, 0);
-
+      addCivCar(44, 24, -0.2, 0x1e3a8a);
+      addLowWall(44, 0, 2, 5.0, 1.25, 0.8, 'stucco_white');
+      addMarketStall(20, 28, 0, 'awning_green');
 
       // Trees & Flora
       [
-        [-14, -46, 'cypress'], [14, -46, 'cypress'], [-14, 44, 'olive'], [14, 44, 'olive'],
-        [36, 42, 'cypress'], [60, -48, 'olive'], [-28, -52, 'cypress'], [-56, 46, 'cypress'],
-        [34, -42, 'olive'], [-32, 34, 'olive'], [60, 24, 'cypress'], [-56, -24, 'cypress']
+        [-14, -48, 'cypress'], [14, -48, 'cypress'], [-14, 46, 'olive'], [14, 46, 'olive'],
+        [60, -48, 'olive'], [-56, 48, 'cypress'], [60, 28, 'cypress'], [-56, -24, 'cypress']
       ].forEach(([tx, tz, tType]) => addTree(tx, tz, tType));
 
-      [[-15, -18], [15, -18], [-15, 18], [15, 18], [34, -12], [-34, -28], [60, -4], [-56, 18]].forEach(([bx, bz]) => {
+      [[-15, -18], [15, -18], [-15, 18], [15, 18], [-34, -28], [60, -4], [-56, 18]].forEach(([bx, bz]) => {
         addBushCluster(bx, bz, 1.3);
       });
 
@@ -1386,65 +1567,88 @@ class MapBuilder {
         { x: -4,  y: 0, z: -66, rotY: Math.PI },
         { x: 14,  y: 0, z: -64, rotY: Math.PI },
         { x: -16, y: 0, z: -64, rotY: Math.PI },
-        { x: 26,  y: 0, z: -62, rotY: Math.PI },
-        { x: -28, y: 0, z: -62, rotY: Math.PI },
-        { x: 42,  y: 0, z: -58, rotY: Math.PI },
-        { x: -38, y: 0, z: -64, rotY: Math.PI },
-        { x: 0,   y: 0, z: -54, rotY: Math.PI },
-        { x: 18,  y: 0, z: -54, rotY: Math.PI }
+        { x: 24,  y: 0, z: -62, rotY: Math.PI },
+        { x: -24, y: 0, z: -62, rotY: Math.PI },
+        { x: 38,  y: 0, z: -60, rotY: Math.PI },
+        { x: -38, y: 0, z: -62, rotY: Math.PI },
+        { x: 0,   y: 0, z: -60, rotY: Math.PI },
+        { x: 18,  y: 0, z: -60, rotY: Math.PI }
       ];
       this.spawns.T = [
         { x: -4,  y: 0, z: 64, rotY: 0 },
         { x: 6,   y: 0, z: 66, rotY: 0 },
-        { x: -16, y: 0, z: 64, rotY: 0 },
-        { x: 18,  y: 0, z: 64, rotY: 0 },
-        { x: -30, y: 0, z: 62, rotY: 0 },
-        { x: 32,  y: 0, z: 62, rotY: 0 },
-        { x: -44, y: 0, z: 58, rotY: 0 },
-        { x: 46,  y: 0, z: 58, rotY: 0 },
-        { x: -6,  y: 0, z: 54, rotY: 0 },
-        { x: 22,  y: 0, z: 52, rotY: 0 }
+        { x: -11, y: 0, z: 63, rotY: 0 },
+        { x: 11,  y: 0, z: 63, rotY: 0 },
+        { x: -24, y: 0, z: 62, rotY: 0 },
+        { x: 24,  y: 0, z: 62, rotY: 0 },
+        { x: -40, y: 0, z: 60, rotY: 0 },
+        { x: 42,  y: 0, z: 60, rotY: 0 },
+        { x: -6,  y: 0, z: 60, rotY: 0 },
+        { x: 22,  y: 0, z: 60, rotY: 0 }
       ];
       this.spawns.DM = [
-        { x: -44, y: 0, z: -36, rotY: 0 },
-        { x: -44, y: 0, z: 0, rotY: Math.PI },
-        { x: -44, y: 0, z: 34, rotY: Math.PI },
-        { x: -6,  y: 0.75, z: 2, rotY: 0 },
-        { x: -6,  y: 0, z: -32, rotY: 0 },
-        { x: -6,  y: 0, z: 36, rotY: Math.PI },
-        { x: 26,  y: 1.4, z: -2, rotY: Math.PI },
-        { x: 22,  y: 0, z: 30, rotY: Math.PI },
-        { x: 48,  y: 0.6, z: -14, rotY: 0 },
-        { x: 48,  y: 0, z: -48, rotY: 0 },
-        { x: 48,  y: 0, z: 12, rotY: Math.PI },
-        { x: 48,  y: 0, z: 38, rotY: Math.PI },
-        { x: -24, y: 0, z: -46, rotY: -Math.PI / 2 },
-        { x: 24,  y: 0, z: -44, rotY: Math.PI / 2 },
-        { x: -24, y: 0, z: 46, rotY: 0 },
-        { x: 60,  y: 0, z: -18, rotY: Math.PI / 2 },
-        { x: 18,  y: 0, z: -24, rotY: 0 },
-        { x: -18, y: 0, z: 24, rotY: Math.PI }
+        { x: -44, y: 0,    z: -38, rotY: 0 },
+        { x: -44, y: 0,    z: 0,   rotY: Math.PI },
+        { x: -44, y: 0,    z: 36,  rotY: Math.PI },
+        { x: -6,  y: 0.75, z: 2,   rotY: 0 },
+        { x: -6,  y: 0,    z: -30, rotY: 0 },
+        { x: -6,  y: 0,    z: 30,  rotY: Math.PI },
+        { x: 25,  y: 1.4,  z: -4,  rotY: Math.PI },
+        { x: 20,  y: 0,    z: 20,  rotY: Math.PI },
+        { x: 48,  y: 0.6,  z: -15, rotY: 0 },
+        { x: 48,  y: 0,    z: -44, rotY: 0 },
+        { x: 44,  y: 0,    z: 12,  rotY: Math.PI },
+        { x: 48,  y: 0,    z: 36,  rotY: Math.PI },
+        { x: -24, y: 0,    z: -45, rotY: -Math.PI / 2 },
+        { x: 32,  y: 0,    z: -44, rotY: Math.PI / 2 },
+        { x: -26, y: 0,    z: 43,  rotY: 0 },
+        { x: 34,  y: 0,    z: 44,  rotY: 0 },
+        { x: 8,   y: 0,    z: 1,   rotY: Math.PI / 2 },
+        { x: 56,  y: 0,    z: 12,  rotY: 0 }
       ];
-      this.waypoints = [
-        { id: 'ct_spawn', x: 0, z: -62, lane: 'mid' },
-        { id: 'ct_b', x: -34, z: -56, lane: 'B' },
-        { id: 'ct_a', x: 44, z: -52, lane: 'A' },
-        { id: 'b_site', x: -44, z: -40, lane: 'B', isSite: 'B' },
-        { id: 'b_front', x: -44, z: -18, lane: 'B' },
-        { id: 'b_tunnels', x: -44, z: 18, lane: 'B' },
-        { id: 't_b_ent', x: -42, z: 50, lane: 'B' },
-        { id: 'mid_north', x: -6, z: -32, lane: 'mid' },
-        { id: 'mid_center', x: -6, z: 2, lane: 'mid' },
-        { id: 'mid_south', x: -6, z: 34, lane: 'mid' },
-        { id: 't_spawn', x: 0, z: 62, lane: 'mid' },
-        { id: 'a_site', x: 48, z: -15, lane: 'A', isSite: 'A' },
-        { id: 'a_short', x: 26, z: -2, lane: 'A' },
-        { id: 'a_long', x: 48, z: 18, lane: 'A' },
-        { id: 't_a_ent', x: 44, z: 50, lane: 'A' }
+
+      this.navNodes = [
+        { id: 'ct_spawn',   x: 0,   z: -62, lane: 'mid', links: ['ct_b_arch', 'ct_a_arch'] },
+        { id: 'ct_b_arch',  x: -24, z: -52, lane: 'B',   links: ['ct_spawn', 'ct_mid', 'b_church'] },
+        { id: 'b_church',   x: -24, z: -45, lane: 'B',   links: ['ct_b_arch', 'b_site'] },
+        { id: 'b_site',     x: -44, z: -40, lane: 'B',   isSite: 'B', links: ['b_church', 'b_dark', 'b_front'] },
+        { id: 'b_dark',     x: -55, z: -39, lane: 'B',   links: ['b_site'] },
+        { id: 'b_front',    x: -44, z: -26, lane: 'B',   links: ['b_site', 'ban_north'] },
+        { id: 'ban_north',  x: -44, z: -15, lane: 'B',   links: ['b_front', 'ban_mid'] },
+        { id: 'ban_mid',    x: -44, z: 1,   lane: 'B',   links: ['ban_north', 'ban_logs'] },
+        { id: 'ban_logs',   x: -44, z: 18,  lane: 'B',   links: ['ban_mid', 'ban_south'] },
+        { id: 'ban_south',  x: -44, z: 38,  lane: 'B',   links: ['ban_logs', 't_tavern'] },
+        { id: 't_tavern',   x: -26, z: 43,  lane: 'B',   links: ['ban_south', 't_b_arch'] },
+        { id: 't_b_arch',   x: -24, z: 58,  lane: 'B',   links: ['t_tavern', 't_mid_arch', 't_spawn'] },
+        { id: 'ct_mid',     x: -6,  z: -42, lane: 'mid', links: ['ct_b_arch', 'ct_a_arch', 'mid_north'] },
+        { id: 'mid_north',  x: -6,  z: -29, lane: 'mid', links: ['ct_mid', 'mid_bridge'] },
+        { id: 'mid_bridge', x: -6,  z: 2,   lane: 'mid', links: ['mid_north', 'boiler', 'mid_south'] },
+        { id: 'boiler',     x: 8,   z: 2,   lane: 'mid', links: ['mid_bridge', 'boiler_e'] },
+        { id: 'boiler_e',   x: 16,  z: 2,   lane: 'A',   links: ['boiler', 'alt_mid'] },
+        { id: 'mid_south',  x: -6,  z: 30,  lane: 'mid', links: ['mid_bridge', 't_mid_arch'] },
+        { id: 't_mid_arch', x: -6,  z: 46,  lane: 'mid', links: ['mid_south', 't_b_arch', 't_a_arch'] },
+        { id: 't_spawn',    x: 0,   z: 62,  lane: 'mid', links: ['t_b_arch', 't_a_arch'] },
+        { id: 'ct_a_arch',  x: 24,  z: -52, lane: 'A',   links: ['ct_spawn', 'ct_mid', 'a_library'] },
+        { id: 'a_library',  x: 32,  z: -44, lane: 'A',   links: ['ct_a_arch', 'a_arch_n', 'apts_n'] },
+        { id: 'a_arch_n',   x: 48,  z: -34, lane: 'A',   links: ['a_library', 'apts_n', 'a_site'] },
+        { id: 'apts_n',     x: 25,  z: -23, lane: 'A',   links: ['a_library', 'a_arch_n', 'apts_top'] },
+        { id: 'apts_top',   x: 25,  z: -4,  lane: 'A',   links: ['apts_n', 'apts_e', 'apts_s'] },
+        { id: 'apts_e',     x: 38,  z: -4,  lane: 'A',   links: ['apts_top', 'a_short_w'] },
+        { id: 'apts_s',     x: 25,  z: 14,  lane: 'A',   links: ['apts_top', 'alt_mid'] },
+        { id: 'a_short_w',  x: 34,  z: -16, lane: 'A',   links: ['apts_e', 'a_site'] },
+        { id: 'a_site',     x: 48,  z: -16, lane: 'A',   isSite: 'A', links: ['a_arch_n', 'a_short_w', 'a_long_n'] },
+        { id: 'a_long_n',   x: 48,  z: -2,  lane: 'A',   links: ['a_site', 'a_long_m'] },
+        { id: 'a_long_m',   x: 48,  z: 12,  lane: 'A',   links: ['a_long_n', 'a_crypt', 'a_long_s'] },
+        { id: 'a_crypt',    x: 56,  z: 12,  lane: 'A',   links: ['a_long_m'] },
+        { id: 'a_long_s',   x: 48,  z: 34,  lane: 'A',   links: ['a_long_m', 't_villa'] },
+        { id: 'alt_mid',    x: 20,  z: 16,  lane: 'A',   links: ['boiler_e', 'apts_s', 't_villa'] },
+        { id: 't_villa',    x: 34,  z: 44,  lane: 'A',   links: ['a_long_s', 'alt_mid', 't_a_arch'] },
+        { id: 't_a_arch',   x: 24,  z: 58,  lane: 'A',   links: ['t_villa', 't_mid_arch', 't_spawn'] }
       ];
+      this.waypoints = this.navNodes;
     } else {
       // ======================================================================
-      // MAP 3: FACILITY NUKE
+      // MAP 3: DE_REACTOR (NUCLEAR FACILITY, LOBBY, CONTROL ROOM & CONTAINER YARD)
       // ======================================================================
       addRoadStrip(6, 0, 18.0, 140);
       addRoadStrip(-50, 0, 14.0, 136);
@@ -1452,32 +1656,64 @@ class MapBuilder {
       addRoadStrip(0, -64, 130, 12.0, CS.textures.getMaterial(roadType, 18, 2));
       addRoadStrip(0, 64, 130, 12.0, CS.textures.getMaterial(roadType, 18, 2));
 
-      
       addBox(76, 0, 0, 12, wallH, 168, 'metal_wall');
       addBox(-76, 0, 0, 12, wallH, 168, 'metal_wall');
       addBox(0, 0, -79, 168, wallH, 8, 'metal_wall');
       addBox(0, 0, 79, 168, wallH, 8, 'metal_wall');
 
-      // --- CT SPAWN HELIPAD COMPLEX (Eliminates empty north field) ---
-      addBox(0, 0, -74, 98, 5.5, 2.2, 'metal_wall');
-      addParkedVehicle(-26, -66, 0.2, 0x1e293b);
-      addGeneratorUnit(26, 0, -66, 0);
-      addJerseyBarrier(-8, 0, -56, 0);
-      addJerseyBarrier(8, 0, -56, 0);
-      addDumpster(-34, 0, -58, 0, 0x1e3a8a);
+      // --- 1. CT SPAWN HELIPAD, ARMORY GATEHOUSE & DECONTAMINATION LOCK ---
+      addBox(0, 0, -74, 108, 5.8, 2.2, 'metal_wall');
+      addBox(6, 0, -56, 9.5, 4.0, 2.2, 'metal_wall'); // CT Blast Shield blocking direct Heaven/Mid sightline
+      addArchway(-24, -56, 24, 7.8, 6.2, 2.2, false); // CT West Security Gate to B
+      addArchway(28, -56, 24, 7.8, 6.2, 2.2, false);  // CT East Security Gate to Yard/Heaven
+
+      // Enterable CT Security Checkpoint Room (x=-26, z=-45)
+      addEnterableBuilding(-26, 0, -45, 11, 4.4, 10, { N: 'door', S: 'door', W: 'door', E: 'window' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(-26, 3.8, -39.8, 0, 'SECURITY LOCK', '#38bdf8');
+
+      // Enterable CT East Garage / Hell Locker Room (x=34, z=-45)
+      addEnterableBuilding(34, 0, -45, 11, 4.4, 10, { N: 'door', S: 'door', W: 'window', E: 'door' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(34, 3.8, -39.8, 0, 'HELL GARAGE', '#38bdf8');
+
+      // NW Aux Generator Room (fills NW corner at x=-54, z=-52)
+      addEnterableBuilding(-54, 0, -52, 11, 4.4, 10, { S: 'door', E: 'door', N: 'solid', W: 'solid' }, 'metal_wall', 'tread_floor', true);
+
+      addParkedVehicle(-20, -68, 0.2, 0x1e293b);
+      addGeneratorUnit(20, 0, -68, 0);
       addStreetLamp(-14, -62, 5.5);
       addStreetLamp(14, -62, 5.5);
 
-      // --- T SPAWN TRUCK YARD (Eliminates empty south field) ---
-      addBox(0, 0, 74, 98, 5.5, 2.2, 'metal_wall');
-      addParkedVehicle(0, 70, Math.PI, 0x0f172a);
-      addShippingContainer(-22, 0, 66, 0, 'container_teal');
-      addShippingContainer(22, 0, 66, 0, 'container_blue');
-      addPalletStack(-34, 0, 60, 0.3);
-      addPalletStack(34, 0, 60, -0.3);
-      addJerseyBarrier(0, 0, 56, 0);
+      // --- 2. T SPAWN TRUCK YARD & ENTERABLE RADIO / TROPHY LOBBY ---
+      addBox(0, 0, 74, 108, 5.8, 2.2, 'metal_wall');
+      addBox(6, 0, 56, 9.5, 4.0, 2.2, 'metal_wall');  // T Spawn Center Shield
+      addArchway(-24, 56, 24, 7.8, 6.2, 2.2, false);  // T West Gate to Ramp
+      addArchway(28, 56, 24, 7.8, 6.2, 2.2, false);   // T East Gate to Outside Yard
 
-      // --- BOMBSITE A: CENTRAL MAIN REACTOR HALL (x = 6, z = -16, y = 0.6m) ---
+      // Enterable Nuke LOBBY / RADIO ROOM Complex (fills the huge 30m southern void at x=6, z=32!)
+      addEnterableBuilding(6, 0, 32, 18, 4.6, 14, { S: 'wideDoor', N: 'wideDoor', W: 'door', E: 'door' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(6, 4.0, 39.2, Math.PI, 'MAIN LOBBY', '#f59e0b');
+      addTacticalSign(6, 4.0, 24.8, 0, 'REACTOR ACCESS', '#ef4444');
+      // Interior Lobby side reception desks (leaves center aisle clear for movement & sightline break)
+      addBox(0.5, 0, 32, 3.6, 1.25, 1.4, 'metal_wall', true, 'metal');
+      addBox(11.5, 0, 32, 3.6, 1.25, 1.4, 'metal_wall', true, 'metal');
+
+      // Enterable T-West Hazmat Room (between Lobby & Ramp, x=-26, z=43)
+      addEnterableBuilding(-26, 0, 43, 12, 4.4, 11, { S: 'door', N: 'door', W: 'door', E: 'window' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(-26, 3.8, 37.3, Math.PI, 'RADIO & TROPHY', '#f59e0b');
+      // SW Coolant Pump Shed (fills SW corner at x=-54, z=50)
+      addEnterableBuilding(-54, 0, 50, 11, 4.2, 10, { E: 'door', N: 'door', S: 'window', W: 'solid' }, 'metal_wall', 'tread_floor', true);
+
+      // Enterable T-East Substation (between Lobby & Outside Yard, x=32, z=43)
+      addEnterableBuilding(32, 0, 43, 12, 4.4, 11, { S: 'door', N: 'door', E: 'door', W: 'window' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(32, 3.8, 37.3, Math.PI, 'SUBSTATION', '#f59e0b');
+
+      addParkedVehicle(0, 69, Math.PI, 0x0f172a);
+      addShippingContainer(-18, 0, 65, 0, 'container_teal');
+      addShippingContainer(18, 0, 65, 0, 'container_blue');
+      addPalletStack(-36, 0, 62, 0.3);
+      addPalletStack(36, 0, 62, -0.3);
+
+      // --- 3. BOMBSITE A: CENTRAL MAIN REACTOR HALL (x = 6, z = -16, y = 0.6m) ---
       this.bombsites.A = { name: 'A', x: 6, y: 0.6, z: -16, radius: 10.5 };
       addBox(6, 0, -16, 28, 0.6, 26, 'tread_floor', true, 'metal');
       addStairs(6, -1.5, 10, 3.2, 0.6, 3, 'north', 'tread_floor');
@@ -1488,8 +1724,9 @@ class MapBuilder {
       decalA.rotation.x = -Math.PI / 2;
       decalA.position.set(6, 0.63, -16);
       mapGroup.add(decalA);
+      addTacticalSign(6, 4.4, -29.5, 0, 'BOMBSITE A - CORE', '#00f0ff');
 
-      // Twin Glowing Reactor Silos
+      // Twin Glowing Reactor Silos on A and B
       const siloMat = CS.textures.getMaterial('metal_wall', 3, 2);
       const coreMat = new THREE.MeshStandardMaterial({
         color: 0x00f0ff, emissive: 0x00d4ff, emissiveIntensity: 0.95, roughness: 0.15, metalness: 0.8
@@ -1520,38 +1757,58 @@ class MapBuilder {
         mapGroup.add(pLight);
       });
 
-      // Elevated "HEAVEN" Catwalk
-      addBox(6, 0, -34, 30, 1.6, 6.0, 'tread_floor', true, 'metal');
-      addStairs(-11.5, -34, 5.0, 5.5, 1.6, 6, 'east', 'tread_floor');
-      addStairs(23.5, -34, 5.0, 5.5, 1.6, 6, 'west', 'tread_floor');
+      // A-Site Control Consoles & Overhead Gantry Bridge
+      addBox(6, 0.6, -24, 5.2, 1.35, 1.0, 'metal_wall', true, 'metal');
+      addBox(-1, 0.6, -8, 3.8, 1.35, 1.0, 'metal_wall', true, 'metal');
+      addBox(13, 0.6, -8, 3.8, 1.35, 1.0, 'metal_wall', true, 'metal');
+      addBox(6, 5.8, -16, 28, 0.6, 5.0, 'tread_floor', true, 'metal'); // High Overhead Crane Gantry
 
-      // Yellow "HUT"
+      // Elevated "HEAVEN" Catwalk (z = -38, leaves clear path to North A-Ramp at z=-30.5)
+      addBox(6, 0, -38, 30, 1.6, 6.0, 'tread_floor', true, 'metal');
+      addStairs(-11.5, -38, 5.0, 5.5, 1.6, 6, 'east', 'tread_floor');
+      addStairs(23.5, -38, 5.0, 5.5, 1.6, 6, 'west', 'tread_floor');
+      addBox(6, 1.6, -35.2, 12, 1.1, 0.45, 'metal_wall', true, 'metal'); // Heaven Railing Cover
+
+      // Enterable Yellow "HUT" with Doors & Sniper Window onto A-Site!
       const hutMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.5, metalness: 0.4 });
-      addBox(-2, 0, 8, 8.5, 3.6, 9.0, hutMat, true, 'metal');
-      addStairs(-2, 14.5, 5.5, 4.0, 1.2, 5, 'north', 'tread_floor');
+      addEnterableBuilding(-1, 0, 10, 9.0, 3.8, 9.0, { S: 'door', N: 'door', E: 'window', W: 'door' }, hutMat, 'tread_floor', true);
+      addTacticalSign(-1, 3.4, 14.7, Math.PI, 'YELLOW HUT', '#facc15');
+      addLowWall(13, 0, 10, 5.0, 1.3, 0.9, 'metal_wall'); // Mini / Squeaky side cover
 
-      // Reactor Hall Walls
-      addDetailedHouse(-22, -24, 6.5, 9.2, 34, 'metal_wall', false, null);
-      addDetailedHouse(-22, 22, 6.5, 9.2, 34, 'metal_wall', false, null);
-      addDetailedHouse(28, 22, 6.5, 9.2, 34, 'metal_wall', false, null);
+      // Reactor Hall Divider Walls with Walk-Through VENT CONNECTOR between A Hall and B Coolant!
+      addDetailedHouse(-22, -25, 6.5, 9.2, 30, 'metal_wall', false, null);
+      addEnterableBuilding(-22, 0, -4, 8.5, 4.2, 10.0, { E: 'door', W: 'door', N: 'window', S: 'solid' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(-17.6, 3.6, -4, Math.PI / 2, 'VENT TUNNEL', '#00f0ff');
+      addDetailedHouse(-22, 19, 6.5, 9.2, 32, 'metal_wall', false, null);
+      addDetailedHouse(28, 19, 6.5, 9.2, 32, 'metal_wall', false, null);
 
-      // --- BOMBSITE B: WEST SUB-COOLANT CHAMBER & RAMP ROOM (x = -50, z = -8) ---
+      // --- 4. BOMBSITE B: WEST SUB-COOLANT CHAMBER, CONTROL ROOM & RAMP (x = -50, z = -8) ---
       this.bombsites.B = { name: 'B', x: -50, y: 0.0, z: -8, radius: 10.0 };
       const decalB = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 11.5), CS.textures.getBombsiteDecalMaterial('B'));
       decalB.rotation.x = -Math.PI / 2;
       decalB.position.set(-50, 0.03, -8);
       mapGroup.add(decalB);
+      addTacticalSign(-50, 4.2, -32.2, 0, 'BOMBSITE B - COOLANT', '#00f0ff');
 
+      // Enterable B Observation Control Room (West of B-Site, x=-60, z=-8)
+      addEnterableBuilding(-60, 0, -8, 7.5, 4.0, 12.0, { E: 'window', N: 'door', S: 'door', W: 'solid' }, 'metal_wall', 'tread_floor', true);
+      // Enterable Decon / Toxic Storage Room (East of B-Site, x=-36, z=-20)
+      addEnterableBuilding(-36, 0, -20, 9.0, 4.0, 10.0, { W: 'door', N: 'door', S: 'door', E: 'solid' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(-40.7, 3.5, -20, -Math.PI / 2, 'TOXIC LAB', '#22c55e');
+
+      // Elevated Ramp Room Deck (x=-50, z=24, y=1.2m) with Roofed Ramp Bunker
       addBox(-50, 0, 24, 16, 1.2, 16, 'tread_floor', true, 'metal');
       addStairs(-50, 14.0, 10, 4.0, 1.2, 5, 'south', 'tread_floor');
       addStairs(-50, 34.0, 10, 4.0, 1.2, 5, 'north', 'tread_floor');
-      addBarrelCluster(-42, 0, -14);
-      addJerseyBarrier(-44, 0, -4, 0);
-      addSandbags(-58, 0, -4, 0.4);
+      addEnterableBuilding(-50, 1.2, 24, 12, 3.8, 10, { N: 'wideDoor', S: 'wideDoor', E: 'window', W: 'window' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(-50, 4.4, 29.2, Math.PI, 'RAMP HEADHOUSE', '#f59e0b');
+
+      addBarrelCluster(-42, 0, -10);
+      addJerseyBarrier(-44, 0, -2, 0);
       addArchway(-50, -34, 28, 8.5, 8.2, 2.8, false);
       addDetailedHouse(-70, 0, 8.0, 9.5, 58, 'metal_wall', false, null);
 
-      // --- EAST OUTSIDE YARD: SILO & SHIPPING CONTAINER MAZE (Eliminates empty outdoor space!) ---
+      // --- 5. EAST OUTSIDE YARD: SILO, SECRET BUNKER & SHIPPING CONTAINER MAZE ---
       const yellowSiloMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4, metalness: 0.55 });
       const bigSilo = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 4.6, 20), yellowSiloMat);
       bigSilo.position.set(36, 2.3, -4);
@@ -1560,50 +1817,26 @@ class MapBuilder {
       this.raycastMeshes.push(bigSilo);
       this.colliders.push({ minX: 31.8, maxX: 40.2, minY: 0, maxY: 4.6, minZ: -8.2, maxZ: 0.2, surface: 'metal' });
 
-      // Stacked Red, Blue & Teal Shipping Containers creating tactical lanes
-      addShippingContainer(54, 0, 18, 0, 'container_red', true);   // Red Container
-      addShippingContainer(56, 0, -14, 0, 'container_blue', true); // Blue Container
-      addShippingContainer(46, 0, -36, 0, 'container_red', true);  // CT Garage Container
-      addShippingContainer(42, 0, 8, Math.PI / 2, 'container_teal');
-      addShippingContainer(64, 0, 34, 0, 'container_blue');
+      // Enterable Yard "SECRET" Stairwell / Transformer House (x=58, z=-8)
+      addEnterableBuilding(58, 0, -8, 10, 4.2, 12, { W: 'door', N: 'door', S: 'door', E: 'window' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(52.8, 3.6, -8, -Math.PI / 2, 'SECRET / YARD', '#38bdf8');
 
-      addParkedVehicle(52, 44, -0.35, 0x1e293b);
-      addCivCar(42, -22, 0.4, 0x334155);
-      addPalletStack(38, 0, 24, 0.2);
-      addPalletStack(58, 0, -2, 0);
-      addDumpster(48, 0, -26, 0, 0x1e3a8a);
-      addJerseyBarrier(48, 0, 30, 0);
-      addJerseyBarrier(36, 0, -44, 0);
+      // Enterable Red Garage at South-East Yard (x=56, z=28)
+      addEnterableBuilding(56, 0, 28, 11, 4.2, 12, { N: 'wideDoor', W: 'door', S: 'door', E: 'solid' }, 'metal_wall', 'tread_floor', true);
+      addTacticalSign(56, 3.6, 21.8, 0, 'RED GARAGE', '#ef4444');
 
+      // Shipping Container Maze along Yard
+      addShippingContainer(46, 0, 12, 0, 'container_red', true);
+      addShippingContainer(46, 0, -24, 0, 'container_blue', true);
+      addShippingContainer(56, 0, -38, 0, 'container_red', true);
+
+      addParkedVehicle(48, 46, -0.25, 0x1e293b);
+      addPalletStack(38, 0, 22, 0.2);
+      addDumpster(42, 0, -32, 0, 0x1e3a8a);
+      addJerseyBarrier(46, 0, 2, 0);
       addDetailedHouse(71, 0, 8.0, 9.5, 58, 'metal_wall', false, null);
 
-      // Outside Yard extra container maze & security barricades:
-      addShippingContainer(52, 0, 0, 0, 'container_blue');
-      addShippingContainer(62, 0, -26, 0, 'container_teal', true);
-      addShippingContainer(36, 0, 32, Math.PI / 2, 'container_red');
-      addJerseyBarrier(52, 0, -2, 0.3);
-      addJerseyBarrier(44, 0, 16, 0);
-      addPalletStack(62, 0, 12, 0);
-
-      // CT approach to Yard & Reactor:
-      addCivCar(20, -52, 0.3, 0x0f172a);
-      addCivCar(-20, -52, -0.3, 0x1e293b);
-      addPalletStack(28, 0, -44, 0.2);
-      addPalletStack(-28, 0, -44, -0.2);
-
-      // T approach to Yard & Ramp:
-      addShippingContainer(22, 0, 50, 0, 'container_red');
-      addShippingContainer(-22, 0, 50, 0, 'container_blue');
-      addJerseyBarrier(8, 0, 42, 0);
-      addJerseyBarrier(-8, 0, 42, 0);
-
-      // Ramp room & Bombsite B cover:
-      addDumpster(-44, 0, 32, 0.2, 0x1e3a29);
-      addPalletStack(-56, 0, 16, 0);
-      addGeneratorUnit(-56, 0, -18, 0);
-
-
-      [[-10, -48], [18, -48], [-10, 48], [18, 48], [62, 32], [62, -32]].forEach(([tx, tz]) => addTree(tx, tz, 'olive'));
+      [[-10, -48], [18, -48], [-10, 48], [18, 48], [62, 44], [62, -48]].forEach(([tx, tz]) => addTree(tx, tz, 'olive'));
 
       this.spawns.CT = [
         { x: 4,   y: 0, z: -66, rotY: Math.PI },
@@ -1611,61 +1844,87 @@ class MapBuilder {
         { x: 14,  y: 0, z: -64, rotY: Math.PI },
         { x: -16, y: 0, z: -64, rotY: Math.PI },
         { x: 28,  y: 0, z: -62, rotY: Math.PI },
-        { x: -30, y: 0, z: -62, rotY: Math.PI },
-        { x: 44,  y: 0, z: -58, rotY: Math.PI },
-        { x: -46, y: 0, z: -58, rotY: Math.PI },
-        { x: 6,   y: 0, z: -54, rotY: Math.PI },
-        { x: 34,  y: 0, z: -52, rotY: Math.PI }
+        { x: -24, y: 0, z: -62, rotY: Math.PI },
+        { x: 42,  y: 0, z: -60, rotY: Math.PI },
+        { x: -40, y: 0, z: -60, rotY: Math.PI },
+        { x: 6,   y: 0, z: -60, rotY: Math.PI },
+        { x: 22,  y: 0, z: -60, rotY: Math.PI }
       ];
       this.spawns.T = [
         { x: 4,   y: 0, z: 66, rotY: 0 },
         { x: -6,  y: 0, z: 66, rotY: 0 },
-        { x: 16,  y: 0, z: 64, rotY: 0 },
-        { x: -16, y: 0, z: 64, rotY: 0 },
-        { x: 30,  y: 0, z: 62, rotY: 0 },
-        { x: -32, y: 0, z: 62, rotY: 0 },
-        { x: 46,  y: 0, z: 58, rotY: 0 },
-        { x: -48, y: 0, z: 58, rotY: 0 },
-        { x: 6,   y: 0, z: 52, rotY: 0 },
-        { x: -36, y: 0, z: 52, rotY: 0 }
+        { x: 12,  y: 0, z: 63, rotY: 0 },
+        { x: -12, y: 0, z: 63, rotY: 0 },
+        { x: 28,  y: 0, z: 62, rotY: 0 },
+        { x: -26, y: 0, z: 62, rotY: 0 },
+        { x: 42,  y: 0, z: 60, rotY: 0 },
+        { x: -42, y: 0, z: 60, rotY: 0 },
+        { x: 6,   y: 0, z: 60, rotY: 0 },
+        { x: -24, y: 0, z: 58, rotY: 0 }
       ];
       this.spawns.DM = [
-        { x: 6,   y: 0.6, z: -24, rotY: 0 },
-        { x: 6,   y: 1.6, z: -34, rotY: 0 },
-        { x: 6,   y: 0,   z: 28, rotY: Math.PI },
-        { x: -50, y: 0,   z: -8, rotY: 0 },
-        { x: -50, y: 1.2, z: 24, rotY: Math.PI },
-        { x: -50, y: 0,   z: -44, rotY: 0 },
-        { x: 46,  y: 0,   z: 4, rotY: Math.PI },
-        { x: 46,  y: 0,   z: -24, rotY: 0 },
-        { x: 46,  y: 0,   z: 34, rotY: Math.PI },
-        { x: -34, y: 0,   z: -20, rotY: Math.PI / 2 },
-        { x: -34, y: 0,   z: 42, rotY: 0 },
-        { x: 18,  y: 0,   z: 42, rotY: Math.PI },
-        { x: 18,  y: 0,   z: -46, rotY: 0 },
-        { x: -14, y: 0,   z: -46, rotY: 0 },
-        { x: 62,  y: 0,   z: 2, rotY: Math.PI / 2 },
-        { x: -60, y: 0,   z: 2, rotY: -Math.PI / 2 },
-        { x: -8,  y: 0,   z: 0, rotY: 0 },
-        { x: 22,  y: 0,   z: -16, rotY: Math.PI / 2 }
+        { x: 6,   y: 0.6, z: -21, rotY: 0 },
+        { x: 6,   y: 1.6, z: -38, rotY: 0 },
+        { x: 6,   y: 0,   z: 22,  rotY: Math.PI },
+        { x: -50, y: 0,   z: -8,  rotY: 0 },
+        { x: -50, y: 1.2, z: 24,  rotY: Math.PI },
+        { x: -50, y: 0,   z: -42, rotY: 0 },
+        { x: 58,  y: 0,   z: -8,  rotY: Math.PI },
+        { x: 38,  y: 0,   z: -24, rotY: 0 },
+        { x: 56,  y: 0,   z: 28,  rotY: Math.PI },
+        { x: -36, y: 0,   z: -20, rotY: Math.PI / 2 },
+        { x: -26, y: 0,   z: 43,  rotY: 0 },
+        { x: 32,  y: 0,   z: 43,  rotY: Math.PI },
+        { x: 34,  y: 0,   z: -45, rotY: 0 },
+        { x: -26, y: 0,   z: -45, rotY: 0 },
+        { x: -1,  y: 0,   z: 10,  rotY: 0 },
+        { x: -22, y: 0,   z: -4,  rotY: Math.PI / 2 },
+        { x: 25,  y: 0,   z: -16, rotY: -Math.PI / 2 },
+        { x: -60, y: 0,   z: -8,  rotY: Math.PI / 2 }
       ];
-      this.waypoints = [
-        { id: 'ct_spawn', x: 6, z: -62, lane: 'mid' },
-        { id: 'ct_b', x: -46, z: -52, lane: 'B' },
-        { id: 'ct_a', x: 42, z: -52, lane: 'A' },
-        { id: 'b_site', x: -50, z: -8, lane: 'B', isSite: 'B' },
-        { id: 'b_front', x: -50, z: 8, lane: 'B' },
-        { id: 'b_tunnels', x: -50, z: 26, lane: 'B' },
-        { id: 't_b_ent', x: -46, z: 50, lane: 'B' },
-        { id: 'mid_north', x: 6, z: -34, lane: 'mid' },
-        { id: 'mid_center', x: 6, z: -16, lane: 'mid', isSite: 'A' },
-        { id: 'mid_south', x: 6, z: 24, lane: 'mid' },
-        { id: 't_spawn', x: 6, z: 62, lane: 'mid' },
-        { id: 'a_site', x: 6, z: -16, lane: 'A', isSite: 'A' },
-        { id: 'a_short', x: 22, z: -16, lane: 'A' },
-        { id: 'a_long', x: 48, z: 6, lane: 'A' },
-        { id: 't_a_ent', x: 46, z: 48, lane: 'A' }
+
+      this.navNodes = [
+        { id: 'ct_spawn',   x: 6,   z: -62, lane: 'mid', links: ['ct_b_gate', 'ct_a_gate'] },
+        { id: 'ct_b_gate',  x: -24, z: -52, lane: 'B',   links: ['ct_spawn', 'ct_sec', 'heaven_w'] },
+        { id: 'ct_sec',     x: -26, z: -45, lane: 'B',   links: ['ct_b_gate', 'b_arch_n'] },
+        { id: 'b_arch_n',   x: -50, z: -40, lane: 'B',   links: ['ct_sec', 'b_north'] },
+        { id: 'b_north',    x: -50, z: -24, lane: 'B',   links: ['b_arch_n', 'b_decon', 'b_ctrl', 'b_east'] },
+        { id: 'b_decon',    x: -36, z: -20, lane: 'B',   links: ['b_north', 'b_vent_w'] },
+        { id: 'b_ctrl',     x: -60, z: -8,  lane: 'B',   links: ['b_north', 'b_south'] },
+        { id: 'b_east',     x: -44, z: -8,  lane: 'B',   links: ['b_north', 'b_site', 'b_vent_w', 'b_south'] },
+        { id: 'b_site',     x: -50, z: -8,  lane: 'B',   isSite: 'B', links: ['b_east'] },
+        { id: 'b_vent_w',   x: -36, z: -4,  lane: 'B',   links: ['b_east', 'b_decon', 'vent_room', 'b_south'] },
+        { id: 'vent_room',  x: -22, z: -4,  lane: 'mid', links: ['b_vent_w', 'a_west'] },
+        { id: 'b_south',    x: -50, z: 8,   lane: 'B',   links: ['b_ctrl', 'b_east', 'b_vent_w', 'b_ramp'] },
+        { id: 'b_ramp',     x: -50, z: 24,  lane: 'B',   links: ['b_south', 'b_ramp_s'] },
+        { id: 'b_ramp_s',   x: -50, z: 42,  lane: 'B',   links: ['b_ramp', 't_radio'] },
+        { id: 't_radio',    x: -26, z: 43,  lane: 'B',   links: ['b_ramp_s', 't_b_gate'] },
+        { id: 't_b_gate',   x: -24, z: 58,  lane: 'B',   links: ['t_radio', 't_lobby_s', 't_spawn'] },
+        { id: 'heaven_w',   x: -16, z: -38, lane: 'mid', links: ['ct_b_gate', 'heaven_top', 'a_north_w'] },
+        { id: 'heaven_top', x: 6,   z: -38, lane: 'mid', links: ['heaven_w', 'heaven_e'] },
+        { id: 'heaven_e',   x: 28,  z: -38, lane: 'A',   links: ['heaven_top', 'ct_garage', 'yard_n'] },
+        { id: 'a_north_w',  x: -6,  z: -24, lane: 'mid', links: ['heaven_w', 'a_north', 'a_west'] },
+        { id: 'a_north',    x: 6,   z: -21, lane: 'mid', links: ['a_north_w', 'a_site', 'a_east'] },
+        { id: 'a_west',     x: -6,  z: -16, lane: 'mid', links: ['a_north_w', 'vent_room', 'a_south'] },
+        { id: 'a_site',     x: 6,   z: -16, lane: 'A',   isSite: 'A', links: ['a_north', 'a_south'] },
+        { id: 'a_east',     x: 17,  z: -16, lane: 'A',   links: ['a_north', 'a_south', 'a_mini'] },
+        { id: 'a_south',    x: 6,   z: -11, lane: 'mid', links: ['a_west', 'a_site', 'a_east', 'a_ramp_s'] },
+        { id: 'a_ramp_s',   x: 6,   z: 2,   lane: 'mid', links: ['a_south', 'hut_in', 'squeaky'] },
+        { id: 'hut_in',     x: -1,  z: 10,  lane: 'mid', links: ['a_ramp_s', 'lobby_n'] },
+        { id: 'squeaky',    x: 8,   z: 10,  lane: 'mid', links: ['a_ramp_s', 'lobby_n'] },
+        { id: 'lobby_n',    x: 6,   z: 21,  lane: 'mid', links: ['hut_in', 'squeaky', 't_lobby_s'] },
+        { id: 't_lobby_s',  x: 6,   z: 44,  lane: 'mid', links: ['lobby_n', 't_b_gate', 't_a_gate'] },
+        { id: 't_spawn',    x: 6,   z: 62,  lane: 'mid', links: ['t_b_gate', 't_a_gate'] },
+        { id: 'ct_a_gate',  x: 28,  z: -52, lane: 'A',   links: ['ct_spawn', 'ct_garage'] },
+        { id: 'ct_garage',  x: 34,  z: -45, lane: 'A',   links: ['ct_a_gate', 'heaven_e', 'yard_n'] },
+        { id: 'yard_n',     x: 36,  z: -24, lane: 'A',   links: ['ct_garage', 'heaven_e', 'a_mini', 'yard_secret'] },
+        { id: 'a_mini',     x: 25,  z: -16, lane: 'A',   links: ['yard_n', 'a_east'] },
+        { id: 'yard_secret', x: 58, z: -8,  lane: 'A',   links: ['yard_n', 'yard_s'] },
+        { id: 'yard_s',     x: 56,  z: 28,  lane: 'A',   links: ['yard_secret', 't_sub'] },
+        { id: 't_sub',      x: 32,  z: 43,  lane: 'A',   links: ['yard_s', 't_a_gate'] },
+        { id: 't_a_gate',   x: 28,  z: 58,  lane: 'A',   links: ['t_sub', 't_lobby_s', 't_spawn'] }
       ];
+      this.waypoints = this.navNodes;
     }
 
     // ========================================================================
@@ -1757,7 +2016,7 @@ class MapBuilder {
 
     for (const c of this.colliders) {
       const h = c.maxY - c.minY;
-      if (h < 0.7) continue;
+      if (h < 0.7 || c.minY > 2.2) continue;
       const p1 = toRadar(c.minX, c.minZ);
       const w = (c.maxX - c.minX) * scale;
       const d = (c.maxZ - c.minZ) * scale;

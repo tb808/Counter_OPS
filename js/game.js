@@ -183,12 +183,16 @@ class TacticalGame {
         CS.ui.renderScoreboard(this);
         document.getElementById('scoreboard-overlay')?.classList.remove('hidden');
       } else if (code === 'KeyB') {
-        this.toggleBuyMenu();
+        if (!this.player.dead) this.toggleBuyMenu();
       } else if (code === 'Escape') {
         if (this.buyMenuOpen) {
           this.toggleBuyMenu(false);
         } else {
           this.togglePauseMenu();
+        }
+      } else if (!this.paused && !this.buyMenuOpen && this.player.dead && !this.modeConfig.respawn) {
+        if (code === 'Space') {
+          this.cycleSpectatorTarget(1);
         }
       } else if (!this.paused && !this.buyMenuOpen && !this.player.dead) {
         if (code === 'Digit1') this.switchSlot(1);
@@ -224,7 +228,12 @@ class TacticalGame {
         this.safeRequestPointerLock();
         return;
       }
-      if (this.player.dead) return;
+      if (this.player.dead) {
+        if (!this.modeConfig.respawn && (e.button === 0 || e.button === 2)) {
+          this.cycleSpectatorTarget(e.button === 0 ? 1 : -1);
+        }
+        return;
+      }
 
       if (e.button === 0) {
         this.mouseDownLeft = true;
@@ -418,9 +427,12 @@ class TacticalGame {
     const pSpawns = CS.mapBuilder.spawns[this.player.team] || [];
     const playerSpawnIdx = Math.floor(Math.random() * pSpawns.length);
     const sp = pSpawns[playerSpawnIdx] || { x: 0, y: 0, z: -62, rotY: Math.PI };
+    this._allTsDeadPlantedNotified = false;
+    this._suppressWinCheck = false;
     this.player.dead = false;
     this.player.deathAnimTimer = 0;
     this.player.killerPos = null;
+    this.player.spectateBotId = null;
     this.player.health = 100;
     this.player.armor = 100;
     this.player.hasHelmet = true;
@@ -507,9 +519,16 @@ class TacticalGame {
     this.roundPhase = 'ended';
     this.buyMenuOpen = false;
     document.getElementById('buy-menu-overlay')?.classList.add('hidden');
+    document.getElementById('death-screen-overlay')?.classList.add('hidden');
+    document.getElementById('interaction-prompt')?.classList.add('hidden');
+    document.getElementById('action-progress-wrap')?.classList.add('hidden');
 
     if (document.pointerLockElement) {
       try { document.exitPointerLock(); } catch (e) {}
+    }
+
+    if (this.currentMode === 'bomb') {
+      this.scores[winningTeam] = (this.scores[winningTeam] || 0) + 1;
     }
 
     const playerWon = winningTeam === this.player.team;
@@ -524,7 +543,7 @@ class TacticalGame {
     const isPractice = this.currentMode === 'practice';
     const creditReward = isPractice ? (playerWon ? 10 : 5) : (playerWon ? 25 : 10);
     const xpReward = playerWon ? 150 : 80;
-    CS.ui.addCredits(creditReward, playerWon ? '5-Minuten-Runde gewonnen!' : '5-Minuten-Runde abgeschlossen');
+    CS.ui.addCredits(creditReward, playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen');
     CS.ui.addXP(xpReward);
 
     CS.audio.announce(winningTeam === 'CT' ? 'Counter-Terrorists Win' : 'Terrorists Win');
@@ -545,6 +564,7 @@ class TacticalGame {
     if (kdEl) kdEl.textContent = `${this.player.kills} / ${this.player.deaths}`;
     if (crEl) crEl.textContent = `+${creditReward} CR`;
 
+    this.updateHUD();
     document.getElementById('round-end-overlay')?.classList.remove('hidden');
   }
 
@@ -1093,8 +1113,37 @@ class TacticalGame {
     return null;
   }
 
+  dropC4(pos) {
+    if (this.plantedBomb.active || this.roundPhase === 'ended') return;
+    if (this.droppedBomb.mesh) {
+      this.scene.remove(this.droppedBomb.mesh);
+      this.droppedBomb.mesh = null;
+    }
+    this.droppedBomb.active = true;
+    this.droppedBomb.position.set(pos.x, (pos.y || 0) + 0.08, pos.z);
+
+    const c4Mesh = CS.weaponBuilder.buildC4Mesh();
+    c4Mesh.scale.set(2.2, 2.2, 2.2);
+    c4Mesh.position.copy(this.droppedBomb.position);
+    this.scene.add(c4Mesh);
+    this.droppedBomb.mesh = c4Mesh;
+
+    if (this.player.team === 'T' && !this.player.dead) {
+      CS.ui.showToast('💣 Das C4 wurde fallengelassen! Hebe es auf (auf dem Radar gelb markiert).', 'gold');
+    }
+    this.bots.forEach(b => {
+      if (!b.dead && b.team === 'T') b.pickNextWaypoint(this.plantedBomb);
+    });
+  }
+
   plantC4(pos, siteName, planterName) {
-    if (this.plantedBomb.active) return;
+    if (this.plantedBomb.active || this.roundPhase === 'ended') return;
+    if (this.droppedBomb.mesh) {
+      this.scene.remove(this.droppedBomb.mesh);
+      this.droppedBomb.mesh = null;
+    }
+    this.droppedBomb.active = false;
+
     this.plantedBomb.active = true;
     this.plantedBomb.site = siteName;
     this.plantedBomb.position.set(pos.x, pos.y + 0.08, pos.z);
@@ -1116,47 +1165,74 @@ class TacticalGame {
   }
 
   defuseC4(defuserName) {
-    if (!this.plantedBomb.active) return;
+    if (!this.plantedBomb.active || this.roundPhase === 'ended') return;
     this.plantedBomb.active = false;
     if (this.plantedBomb.mesh) {
       this.scene.remove(this.plantedBomb.mesh);
       this.plantedBomb.mesh = null;
     }
-    this.roundPhase = 'live';
-    this.scores.CT += 5;
-    this.player.money = Math.min(16000, this.player.money + 2500);
-    CS.ui.addCredits(150, 'Bombe entschärft Bonus!');
+    if (this.player.team === 'CT') {
+      this.player.money = Math.min(16000, this.player.money + 2500);
+      CS.ui.addCredits(150, 'Bombe entschärft Bonus!');
+    }
     CS.audio.announce('The bomb has been defused');
-    this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, '+5 Punkte für CT • +$2.500 Match-Geld • +150 CR!');
-    this.reassignC4AfterExplosion();
+
+    if (this.currentMode === 'bomb') {
+      this.endRound('CT', `✂️ Bombe wurde von ${defuserName} entschärft!`);
+    } else {
+      this.roundPhase = 'live';
+      this.scores.CT += 5;
+      this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, '+5 Punkte für CT • +$2.500 Match-Geld • +150 CR!');
+      this.reassignC4AfterExplosion();
+    }
   }
 
   detonateC4() {
-    if (!this.plantedBomb.active) return;
+    if (!this.plantedBomb.active || this.roundPhase === 'ended') return;
+    const siteName = this.plantedBomb.site;
+    const bPos = this.plantedBomb.position.clone();
     this.plantedBomb.active = false;
     if (this.plantedBomb.mesh) {
       this.scene.remove(this.plantedBomb.mesh);
       this.plantedBomb.mesh = null;
     }
-    this.roundPhase = 'live';
     CS.audio.playExplosion('c4');
-    this.spawnImpactParticles(this.plantedBomb.position, 0xff5500, 65, 18);
+    this.spawnImpactParticles(bPos, 0xff5500, 65, 18);
 
-    // Massive blast radius at the bombsite
-    const bPos = this.plantedBomb.position;
-    if (this.player.position.distanceTo(bPos) < 26) {
-      this.damagePlayer(250, null, false);
-    }
-    for (const b of this.bots) {
-      if (!b.dead && b.position.distanceTo(bPos) < 26) {
-        b.takeDamage(250, null, false);
+    if (this.currentMode === 'bomb') {
+      // Massive blast radius at the bombsite; suppress intermediate team-wipe check because the bomb explosion itself wins the round for T!
+      this._suppressWinCheck = true;
+      if (!this.player.dead && this.player.position.distanceTo(bPos) < 26) {
+        this.damagePlayer(250, null, false);
       }
+      for (const b of this.bots) {
+        if (!b.dead && b.position.distanceTo(bPos) < 26) {
+          b.takeDamage(250, null, false);
+        }
+      }
+      this._suppressWinCheck = false;
+
+      if (this.player.team === 'T') {
+        this.player.money = Math.min(16000, this.player.money + 2500);
+        CS.ui.addCredits(150, 'C4 Detonation Bonus!');
+      }
+      this.endRound('T', `💥 Bombenplatz ${siteName} wurde durch das C4 gesprengt!`);
+    } else {
+      this.roundPhase = 'live';
+      if (this.player.position.distanceTo(bPos) < 26) {
+        this.damagePlayer(250, null, false);
+      }
+      for (const b of this.bots) {
+        if (!b.dead && b.position.distanceTo(bPos) < 26) {
+          b.takeDamage(250, null, false);
+        }
+      }
+      this.scores.T += 5;
+      this.player.money = Math.min(16000, this.player.money + 2500);
+      CS.ui.addCredits(150, 'C4 Detonation Bonus!');
+      this.showBanner(`💥 BOMBENPLATZ ${siteName} GESPRENGT!`, '+5 Punkte für Terroristen • +$2.500 Match-Geld • +150 CR!');
+      this.reassignC4AfterExplosion();
     }
-    this.scores.T += 5;
-    this.player.money = Math.min(16000, this.player.money + 2500);
-    CS.ui.addCredits(150, 'C4 Detonation Bonus!');
-    this.showBanner(`💥 BOMBENPLATZ ${this.plantedBomb.site} GESPRENGT!`, '+5 Punkte für Terroristen • +$2.500 Match-Geld • +150 CR!');
-    this.reassignC4AfterExplosion();
   }
 
   reassignC4AfterExplosion() {
@@ -1168,6 +1244,44 @@ class TacticalGame {
     }
   }
 
+  getTeamAliveCounts() {
+    let ctAlive = (this.player.team === 'CT' && !this.player.dead) ? 1 : 0;
+    let tAlive = (this.player.team === 'T' && !this.player.dead) ? 1 : 0;
+    for (const b of this.bots) {
+      if (!b.dead) {
+        if (b.team === 'CT') ctAlive++;
+        else if (b.team === 'T') tAlive++;
+      }
+    }
+    return { ctAlive, tAlive };
+  }
+
+  checkRoundWinConditions() {
+    if (this.currentMode !== 'bomb' || this.roundPhase === 'ended' || this._suppressWinCheck) return;
+
+    const { ctAlive, tAlive } = this.getTeamAliveCounts();
+
+    // 1. If all Counter-Terrorists are dead -> Terrorists win immediately!
+    // (Even if the bomb is planted or not planted, no CT is alive to defend or defuse)
+    if (ctAlive <= 0) {
+      this.endRound('T', 'Alle Counter-Terrorists wurden eliminiert!');
+      return;
+    }
+
+    // 2. If all Terrorists are dead:
+    if (tAlive <= 0) {
+      // IMPORTANT: If the C4 bomb is ALREADY planted, the round does NOT end yet!
+      // Surviving CTs must still defuse the planted bomb before it explodes!
+      if (!this.plantedBomb.active) {
+        this.endRound('CT', 'Alle Terroristen wurden eliminiert!');
+        return;
+      } else if (!this._allTsDeadPlantedNotified) {
+        this._allTsDeadPlantedNotified = true;
+        this.showBanner('⚠️ ALLE TERRORISTEN ELIMINIERT!', `Die Bombe auf ${this.plantedBomb.site} tickt weiter — entschärfe sie rechtzeitig!`);
+      }
+    }
+  }
+
   // ==========================================================================
   // KILL REWARDS, ECONOMY & BUY SYSTEM
   // ==========================================================================
@@ -1175,14 +1289,16 @@ class TacticalGame {
     const isPlayerKiller = killer === this.player;
     const isPlayerVictim = victim === this.player;
 
-    const killerName = isPlayerKiller ? CS.ui.profile.playerName : `BOT ${killer.name}`;
+    const killerName = isPlayerKiller ? CS.ui.profile.playerName : (killer ? `BOT ${killer.name}` : 'Explosion');
     const victimName = isPlayerVictim ? CS.ui.profile.playerName : `BOT ${victim.name}`;
 
-    CS.ui.addKillfeedEntry(killerName, killer.team, victimName, victim.team, weaponId, isHeadshot);
+    CS.ui.addKillfeedEntry(killerName, killer ? killer.team : victim.team, victimName, victim.team, weaponId, isHeadshot);
 
     if (killer) {
       killer.kills++;
-      this.scores[killer.team] = (this.scores[killer.team] || 0) + 1;
+      if (this.currentMode !== 'bomb') {
+        this.scores[killer.team] = (this.scores[killer.team] || 0) + 1;
+      }
       const wReward = CS.WEAPONS[weaponId]?.killReward || 300;
       killer.money = Math.min(16000, (killer.money || 0) + wReward);
 
@@ -1213,12 +1329,12 @@ class TacticalGame {
       victim.respawnTimer = this.modeConfig.respawnDelay || 2.5;
       if (victim.hasC4) {
         victim.hasC4 = false;
-        const aliveT = this.bots.find(b => !b.dead && b.team === 'T') || this.bots.find(b => b.team === 'T');
-        if (aliveT) aliveT.hasC4 = true;
+        this.dropC4(victim.position);
       }
     }
 
     this.updateHUD();
+    this.checkRoundWinConditions();
   }
 
   equipArmsRaceWeapon() {
@@ -1276,8 +1392,19 @@ class TacticalGame {
       this.player.deathRollDir = Math.random() > 0.5 ? 1 : -1;
       this.player.killerPos = (attacker && attacker.position) ? attacker.position.clone() : null;
       this.player.reloading = false;
+      this.player.plantingProgress = 0;
+      this.player.defusingProgress = 0;
       this.mouseDownLeft = false;
       this.setScope(-1);
+      document.getElementById('interaction-prompt')?.classList.add('hidden');
+      document.getElementById('action-progress-wrap')?.classList.add('hidden');
+
+      // If the player was carrying the C4, drop it on the ground so surviving Terrorists can still plant it!
+      if (this.player.slots[5]) {
+        this.player.slots[5] = null;
+        this.dropC4(this.player.position);
+      }
+
       this.player.respawnTimer = this.modeConfig.respawnDelay || 2.8;
       CS.audio.playDeathSound(isHeadshot);
 
@@ -1408,6 +1535,14 @@ class TacticalGame {
 
   dropCurrentWeapon() {
     const s = this.player.activeSlot;
+    if (s === 5 && this.player.slots[5]) {
+      this.player.slots[5] = null;
+      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.yaw);
+      const dropPos = this.player.position.clone().addScaledVector(forward, 1.4);
+      this.dropC4(dropPos);
+      this.switchSlot(this.player.slots[1] ? 1 : (this.player.slots[2] ? 2 : 3));
+      return;
+    }
     if (s !== 1 && s !== 2) return;
     const item = this.player.slots[s];
     if (!item) return;
@@ -1560,8 +1695,10 @@ class TacticalGame {
 
     if (this.buyZoneTimer > 0) this.buyZoneTimer -= dt;
 
-    // 5-Minute Master Round Timer
-    this.phaseTimer -= dt;
+    // 5-Minute Master Round Timer (frozen once the bomb is planted so the 40s C4 timer governs the round!)
+    if (!this.plantedBomb.active) {
+      this.phaseTimer -= dt;
+    }
 
     // Planted C4 Fuse Timer
     if (this.plantedBomb.active) {
@@ -1575,13 +1712,21 @@ class TacticalGame {
       }
       if (this.plantedBomb.timer <= 0) {
         this.detonateC4();
+        return;
       }
     }
 
-    // When the 5-minute (300s) round timer finishes, show the Round-End Choice Screen!
-    if (this.phaseTimer <= 0) {
-      const winner = this.scores.CT >= this.scores.T ? 'CT' : 'T';
-      this.endRound(winner, '5-Minuten-Rundenzeit abgelaufen!');
+    this.checkRoundWinConditions();
+    if (this.roundPhase === 'ended') return;
+
+    // When the master round timer finishes (and bomb is NOT planted):
+    if (this.phaseTimer <= 0 && !this.plantedBomb.active) {
+      if (this.currentMode === 'bomb') {
+        this.endRound('CT', 'Rundenzeit abgelaufen — Bombenplätze erfolgreich verteidigt!');
+      } else {
+        const winner = this.scores.CT >= this.scores.T ? 'CT' : 'T';
+        this.endRound(winner, '5-Minuten-Rundenzeit abgelaufen!');
+      }
     }
   }
 
@@ -1609,45 +1754,63 @@ class TacticalGame {
     return topCandidates[Math.floor(Math.random() * topCandidates.length)].sp;
   }
 
+  getSpectatableBots() {
+    const allies = this.bots.filter(b => !b.dead && b.team === this.player.team);
+    if (allies.length > 0) return allies;
+    return this.bots.filter(b => !b.dead);
+  }
+
+  cycleSpectatorTarget(dir = 1) {
+    const pool = this.getSpectatableBots();
+    if (pool.length === 0) {
+      this.player.spectateBotId = null;
+      return;
+    }
+    const curIdx = pool.findIndex(b => b.id === this.player.spectateBotId);
+    const nextIdx = (curIdx + dir + pool.length) % pool.length;
+    this.player.spectateBotId = pool[nextIdx].id;
+    CS.audio.playUISound('click');
+  }
+
   updatePlayer(dt) {
     if (this.player.dead) {
       this.player.deathAnimTimer = (this.player.deathAnimTimer || 0) + dt;
       const fallProgress = Math.min(1, this.player.deathAnimTimer / 0.58);
       const easeFall = 1 - Math.pow(1 - fallProgress, 3);
 
-      // First-person camera collapse to the ground + dramatic head tilt (roll)
-      const targetDeadEye = 0.24;
-      this.player.eyeHeight += (targetDeadEye - this.player.eyeHeight) * Math.min(1, dt * 8.5);
-      const targetPitch = -0.22;
-      this.player.pitch += (targetPitch - this.player.pitch) * Math.min(1, dt * 6.5);
-
-      // Smoothly turn camera toward the killer (Killcam look-at)
-      if (this.player.killerPos) {
-        const dx = this.player.killerPos.x - this.player.position.x;
-        const dz = this.player.killerPos.z - this.player.position.z;
-        const desiredYaw = Math.atan2(-dx, -dz);
-        let diff = desiredYaw - this.player.yaw;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        this.player.yaw += diff * Math.min(1, dt * 4.5);
-      }
-
-      this.camera.position.set(
-        this.player.position.x,
-        this.player.position.y + this.player.eyeHeight,
-        this.player.position.z
-      );
-      this.camera.rotation.order = 'YXZ';
-      this.camera.rotation.y = this.player.yaw;
-      this.camera.rotation.x = this.player.pitch;
-      this.camera.rotation.z = easeFall * 0.58 * (this.player.deathRollDir || 1);
-
-      // Update Death Screen Respawn Countdown Bar
+      // Update Death Screen Respawn Countdown Bar / Bomb Mode Spectator Info
       const respTextEl = document.getElementById('death-respawn-text');
       const respFillEl = document.getElementById('death-respawn-fill');
       const maxDelay = this.modeConfig.respawnDelay || 2.8;
 
       if (this.modeConfig.respawn) {
+        // First-person camera collapse to the ground + dramatic head tilt (roll)
+        const targetDeadEye = 0.24;
+        this.player.eyeHeight += (targetDeadEye - this.player.eyeHeight) * Math.min(1, dt * 8.5);
+        const targetPitch = -0.22;
+        this.player.pitch += (targetPitch - this.player.pitch) * Math.min(1, dt * 6.5);
+
+        // Smoothly turn camera toward the killer (Killcam look-at)
+        if (this.player.killerPos) {
+          const dx = this.player.killerPos.x - this.player.position.x;
+          const dz = this.player.killerPos.z - this.player.position.z;
+          const desiredYaw = Math.atan2(-dx, -dz);
+          let diff = desiredYaw - this.player.yaw;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          this.player.yaw += diff * Math.min(1, dt * 4.5);
+        }
+
+        this.camera.position.set(
+          this.player.position.x,
+          this.player.position.y + this.player.eyeHeight,
+          this.player.position.z
+        );
+        this.camera.rotation.order = 'YXZ';
+        this.camera.rotation.y = this.player.yaw;
+        this.camera.rotation.x = this.player.pitch;
+        this.camera.rotation.z = easeFall * 0.58 * (this.player.deathRollDir || 1);
+
         this.player.respawnTimer -= dt;
         const rem = Math.max(0, this.player.respawnTimer);
         if (respTextEl) respTextEl.textContent = `Wiedereinstieg in ${rem.toFixed(1)}s...`;
@@ -1669,6 +1832,7 @@ class TacticalGame {
           this.player.recoilPitchAccum = 0;
           this.player.recoilYawAccum = 0;
           this.camera.rotation.z = 0;
+          this.viewmodelGroup.visible = true;
           this.player.position.set(sp.x, sp.y || 0, sp.z);
           this.player.velocity.set(0, 0, 0);
           document.getElementById('death-screen-overlay')?.classList.add('hidden');
@@ -1683,8 +1847,67 @@ class TacticalGame {
           CS.ui.showToast('🛡️ Spawn-Schild aktiv (5s Unverwundbarkeit)', 'info');
         }
       } else {
-        if (respTextEl) respTextEl.textContent = 'Warte auf Rundenende...';
-        if (respFillEl) respFillEl.style.width = '0%';
+        // NO RESPAWN (Bomb Defusal Mode): Stay dead until round ends & spectate living agents!
+        if (this.player.deathAnimTimer < 1.8) {
+          const targetDeadEye = 0.24;
+          this.player.eyeHeight += (targetDeadEye - this.player.eyeHeight) * Math.min(1, dt * 8.5);
+          const targetPitch = -0.22;
+          this.player.pitch += (targetPitch - this.player.pitch) * Math.min(1, dt * 6.5);
+
+          if (this.player.killerPos) {
+            const dx = this.player.killerPos.x - this.player.position.x;
+            const dz = this.player.killerPos.z - this.player.position.z;
+            const desiredYaw = Math.atan2(-dx, -dz);
+            let diff = desiredYaw - this.player.yaw;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.player.yaw += diff * Math.min(1, dt * 4.5);
+          }
+
+          this.camera.position.set(
+            this.player.position.x,
+            this.player.position.y + this.player.eyeHeight,
+            this.player.position.z
+          );
+          this.camera.rotation.order = 'YXZ';
+          this.camera.rotation.y = this.player.yaw;
+          this.camera.rotation.x = this.player.pitch;
+          this.camera.rotation.z = easeFall * 0.58 * (this.player.deathRollDir || 1);
+        } else {
+          // Follow a living teammate / bot in spectator view while waiting for round end
+          this.viewmodelGroup.visible = false;
+          const pool = this.getSpectatableBots();
+          let specBot = pool.find(b => b.id === this.player.spectateBotId);
+          if (!specBot && pool.length > 0) {
+            specBot = pool[0];
+            this.player.spectateBotId = specBot.id;
+          }
+          if (specBot) {
+            const backOffset = new THREE.Vector3(Math.sin(specBot.yaw) * 2.8, 2.1, Math.cos(specBot.yaw) * 2.8);
+            this.camera.position.set(
+              specBot.position.x + backOffset.x,
+              specBot.position.y + backOffset.y,
+              specBot.position.z + backOffset.z
+            );
+            this.camera.rotation.order = 'YXZ';
+            this.camera.rotation.y = specBot.yaw;
+            this.camera.rotation.x = -0.18;
+            this.camera.rotation.z = 0;
+          }
+        }
+
+        const { ctAlive, tAlive } = this.getTeamAliveCounts();
+        const pool = this.getSpectatableBots();
+        const specBot = pool.find(b => b.id === this.player.spectateBotId) || pool[0];
+        const specLabel = specBot ? `🎥 Zuschauer: BOT ${specBot.name} (${specBot.team}) [KLICK/SPACE wechseln] • ` : '';
+        if (this.plantedBomb.active) {
+          const bRem = Math.max(0, this.plantedBomb.timer);
+          if (respTextEl) respTextEl.textContent = `${specLabel}💣 Bombe tickt (${bRem.toFixed(1)}s) — ${ctAlive} CT vs ${tAlive} T lebend`;
+          if (respFillEl) respFillEl.style.width = `${Math.min(100, (bRem / (this.modeConfig.bombTime || 40)) * 100)}%`;
+        } else {
+          if (respTextEl) respTextEl.textContent = `${specLabel}Kein Respawn — Warte auf Rundenende (${ctAlive} CT vs ${tAlive} T lebend)`;
+          if (respFillEl) respFillEl.style.width = '0%';
+        }
       }
       return;
     }
@@ -1929,6 +2152,42 @@ class TacticalGame {
   }
 
   updateWorldEntities(dt) {
+    // 0. Dropped C4 Pickup (by living Terrorist player or Terrorist bot)
+    if (this.droppedBomb.active && !this.plantedBomb.active && this.roundPhase !== 'ended') {
+      if (this.droppedBomb.mesh) {
+        this.droppedBomb.mesh.rotation.y += dt * 1.8;
+      }
+      if (!this.player.dead && this.player.team === 'T' && !this.player.slots[5]) {
+        if (this.player.position.distanceTo(this.droppedBomb.position) < 2.2) {
+          this.player.slots[5] = { id: 'c4' };
+          if (this.droppedBomb.mesh) {
+            this.scene.remove(this.droppedBomb.mesh);
+            this.droppedBomb.mesh = null;
+          }
+          this.droppedBomb.active = false;
+          CS.audio.playUISound('buy');
+          CS.ui.showToast('💣 Du hast das C4 aufgehoben! Platziere es bei A oder B [E].', 'gold');
+          this.updateHUD();
+        }
+      }
+      if (this.droppedBomb.active) {
+        for (const b of this.bots) {
+          if (!b.dead && b.team === 'T' && !b.hasC4) {
+            if (b.position.distanceTo(this.droppedBomb.position) < 2.5) {
+              b.hasC4 = true;
+              if (this.droppedBomb.mesh) {
+                this.scene.remove(this.droppedBomb.mesh);
+                this.droppedBomb.mesh = null;
+              }
+              this.droppedBomb.active = false;
+              b.pickNextWaypoint(this.plantedBomb);
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // 1. Active Thrown Grenades
     for (let i = this.activeGrenades.length - 1; i >= 0; i--) {
       const g = this.activeGrenades[i];

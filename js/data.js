@@ -502,7 +502,7 @@ CS.MAPS = {
 CS.MODES = {
   bomb: {
     id: 'bomb',
-    name: 'Bombenentschärfung (5 Min Runde)',
+    name: 'Bombenentschärfung (Kein Respawn)',
     shortName: 'BOMB DEFUSAL',
     icon: '💣',
     maxRounds: 12,
@@ -510,9 +510,9 @@ CS.MODES = {
     roundTime: 300,
     buyTime: 300,
     bombTime: 40,
-    respawn: true,
-    respawnDelay: 3.0,
-    desc: '5-Minuten-Runde: Terroristen versuchen das C4 bei A oder B zu sprengen, CTs verteidigen und entschärfen. Volles Kaufsystem [B].'
+    respawn: false,
+    respawnDelay: 0,
+    desc: 'Kein Respawn: Wer stirbt, bleibt bis zum Rundenende tot! Gewinne durch Eliminierung des Gegnerteams oder durch C4-Sprengung / Entschärfung.'
   },
   tdm: {
     id: 'tdm',
