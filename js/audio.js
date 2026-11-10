@@ -492,6 +492,53 @@ class AudioManager {
     nSrc.start(now);
     nSrc.stop(now + 0.46);
   }
+
+  playKillStreakSound(streak = 2) {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    const chordSets = {
+      1: [440, 554.37],
+      2: [523.25, 659.25, 783.99],
+      3: [587.33, 739.99, 880, 1174.66],
+      4: [659.25, 830.61, 987.77, 1318.51],
+      5: [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98]
+    };
+    const notes = chordSets[Math.min(5, Math.max(1, streak))] || chordSets[2];
+
+    notes.forEach((freq, idx) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = streak >= 4 ? 'sawtooth' : 'triangle';
+      const t0 = now + idx * 0.045;
+      o.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(streak >= 5 ? 0.20 : 0.16, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + (streak >= 5 ? 0.75 : 0.42));
+      o.connect(g);
+      g.connect(this.masterGain);
+      o.start(t0);
+      o.stop(t0 + (streak >= 5 ? 0.8 : 0.45));
+    });
+  }
+
+  playShellClink() {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    const baseFreq = 3100 + Math.random() * 650;
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.72, now + 0.045);
+    g.gain.setValueAtTime(0.065, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.055);
+  }
 }
 
 CS.audio = new AudioManager();

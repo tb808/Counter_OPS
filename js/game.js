@@ -17,6 +17,7 @@ class TacticalGame {
     this.currentMode = 'bomb';
     this.modeConfig = CS.MODES.bomb;
     this.currentMap = 'de_sandstorm';
+    this.currentDifficulty = 'hard';
 
     // Match & Round State
     this.roundNumber = 1;
@@ -83,7 +84,12 @@ class TacticalGame {
       flashedAlpha: 0,
       deathAnimTimer: 0,
       deathRollDir: 1,
-      killerPos: null
+      killerPos: null,
+      roundKills: 0,
+      multiKillCount: 0,
+      lastKillTime: 0,
+      clutchSituation: 0,
+      pickupCooldown: 0
     };
 
     // World Entities
@@ -94,6 +100,12 @@ class TacticalGame {
     this.tracers = [];
     this.particles = [];
     this.droppedItems = [];
+    this.bulletDecals = [];
+    this.shellCasings = [];
+    this.damageIndicators = [];
+    this.activeSquadOrder = null;
+    this.roundFirstBloodAwarded = false;
+    this._bulletDecalMat = null;
 
     this.plantedBomb = {
       active: false,
@@ -204,9 +216,9 @@ class TacticalGame {
         else if (code === 'KeyR') this.startReload();
         else if (code === 'KeyF') this.triggerInspect();
         else if (code === 'KeyG') this.dropCurrentWeapon();
-        else if (code === 'KeyZ') this.sendRadioCommand('Rush Bombsite!');
-        else if (code === 'KeyX') this.sendRadioCommand('Need Backup!');
-        else if (code === 'KeyV') this.sendRadioCommand('Sector Clear!');
+        else if (code === 'KeyZ') this.sendRadioCommand('rush');
+        else if (code === 'KeyX') this.sendRadioCommand('follow');
+        else if (code === 'KeyV') this.sendRadioCommand('hold');
         else if (code === 'Space' && this.player.onGround) {
           this.player.velocity.y = 6.9;
           this.player.onGround = false;
@@ -306,12 +318,57 @@ class TacticalGame {
   // ==========================================================================
   // MATCH & ROUND LIFECYCLE
   // ==========================================================================
-  startMatch(modeId = 'bomb', mapId = 'de_sandstorm', playerTeam = 'CT') {
+  getDifficultyData() {
+    return CS.DIFFICULTIES[this.currentDifficulty] || CS.DIFFICULTIES.hard;
+  }
+
+  getCreditMultiplier() {
+    const diffMult = this.getDifficultyData().creditMult || 1.0;
+    const modeMult = (this.modeConfig && this.modeConfig.creditMult) || 1.0;
+    return diffMult * modeMult;
+  }
+
+  getXPMultiplier() {
+    return this.getDifficultyData().xpMult || 1.0;
+  }
+
+  setDifficulty(diffId) {
+    if (!CS.DIFFICULTIES[diffId]) return;
+    this.currentDifficulty = diffId;
+    if (CS.ui && CS.ui.profile && CS.ui.profile.settings) {
+      CS.ui.profile.settings.difficulty = diffId;
+      CS.ui.saveProfile();
+      CS.ui.syncDifficultyControls(diffId);
+    }
+    const diff = this.getDifficultyData();
+    if (this.running) {
+      for (const b of this.bots) {
+        if (!b.dead) {
+          const cfg = b.getDifficultyConfig(this);
+          b.armor = Math.min(b.armor, cfg.startArmor ?? 100);
+          b.hasHelmet = cfg.hasHelmet ?? true;
+          b.hasDefuseKit = b.team === 'CT' && (cfg.hasDefuseKit ?? true);
+          b.grenadesLeft = Math.min(b.grenadesLeft, cfg.maxGrenades ?? 0);
+        }
+        b.buildMesh();
+      }
+      this.updateHUD();
+      CS.ui.showToast(`${diff.icon} KI-Schwierigkeit geändert auf: ${diff.name.toUpperCase()} (${diff.badge})`, 'gold');
+    }
+  }
+
+  startMatch(modeId = 'bomb', mapId = 'de_sandstorm', playerTeam = 'CT', difficultyId = null) {
     CS.audio.init();
     this.currentMode = modeId;
     this.modeConfig = CS.MODES[modeId] || CS.MODES.bomb;
     this.currentMap = mapId;
     this.player.team = playerTeam;
+    this.currentDifficulty = difficultyId || CS.ui?.profile?.settings?.difficulty || 'hard';
+    if (CS.ui?.profile?.settings) {
+      CS.ui.profile.settings.difficulty = this.currentDifficulty;
+      CS.ui.saveProfile();
+      CS.ui.syncDifficultyControls(this.currentDifficulty);
+    }
 
     // Clear previous scene
     while (this.scene.children.length > 0) {
@@ -324,6 +381,9 @@ class TacticalGame {
     this.tracers = [];
     this.particles = [];
     this.droppedItems = [];
+    this.bulletDecals = [];
+    this.shellCasings = [];
+    this.clearDamageIndicators();
 
     // Build 3D Map
     CS.mapBuilder.build(this.scene, mapId);
@@ -409,6 +469,7 @@ class TacticalGame {
     document.getElementById('lobby-screen')?.classList.remove('hidden');
 
     CS.ui.updateHeaderStats();
+    CS.ui.renderStatsTab();
     CS.ui.rebuildLobbyShowcase();
   }
 
@@ -429,10 +490,20 @@ class TacticalGame {
     const sp = pSpawns[playerSpawnIdx] || { x: 0, y: 0, z: -62, rotY: Math.PI };
     this._allTsDeadPlantedNotified = false;
     this._suppressWinCheck = false;
+    this.roundFirstBloodAwarded = false;
+    this.activeSquadOrder = null;
+    this.clearDamageIndicators();
+    document.getElementById('multikill-banner')?.classList.add('hidden');
+    document.getElementById('squad-order-badge')?.classList.add('hidden');
     this.player.dead = false;
     this.player.deathAnimTimer = 0;
     this.player.killerPos = null;
     this.player.spectateBotId = null;
+    this.player.roundKills = 0;
+    this.player.multiKillCount = 0;
+    this.player.lastKillTime = 0;
+    this.player.clutchSituation = 0;
+    this.player.pickupCooldown = 0;
     this.player.health = 100;
     this.player.armor = 100;
     this.player.hasHelmet = true;
@@ -496,7 +567,7 @@ class TacticalGame {
   }
 
   clearRoundEntities() {
-    [...this.activeGrenades, ...this.smokeClouds, ...this.fireZones, ...this.droppedItems].forEach(ent => {
+    [...this.activeGrenades, ...this.smokeClouds, ...this.fireZones, ...this.droppedItems, ...this.bulletDecals, ...this.shellCasings].forEach(ent => {
       if (ent.mesh) this.scene.remove(ent.mesh);
       if (ent.light) this.scene.remove(ent.light);
     });
@@ -504,6 +575,8 @@ class TacticalGame {
     this.smokeClouds = [];
     this.fireZones = [];
     this.droppedItems = [];
+    this.bulletDecals = [];
+    this.shellCasings = [];
 
     if (this.plantedBomb.mesh) this.scene.remove(this.plantedBomb.mesh);
     this.plantedBomb.active = false;
@@ -532,6 +605,7 @@ class TacticalGame {
     }
 
     const playerWon = winningTeam === this.player.team;
+    CS.ui.recordRoundEnd(playerWon, this.currentMap);
 
     // Economy & Lobby Credits / XP Rewards!
     const roundMoneyBonus = playerWon ? 3250 : 1900;
@@ -541,9 +615,25 @@ class TacticalGame {
     });
 
     const isPractice = this.currentMode === 'practice';
-    const creditReward = isPractice ? (playerWon ? 10 : 5) : (playerWon ? 25 : 10);
-    const xpReward = playerWon ? 150 : 80;
-    CS.ui.addCredits(creditReward, playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen');
+    const baseRoundCR = isPractice ? (playerWon ? 15 : 8) : (playerWon ? 35 : 15);
+    let creditReward = Math.max(1, Math.round(baseRoundCR * this.getCreditMultiplier()));
+    const xpReward = Math.max(10, Math.round((playerWon ? 150 : 80) * this.getXPMultiplier()));
+    const diffData = this.getDifficultyData();
+
+    // Award Clutch Bonus if player won a 1v2+ situation in Bomb mode!
+    if (playerWon && !this.player.dead && this.currentMode === 'bomb' && (this.player.clutchSituation || 0) >= 2) {
+      const clutchCR = Math.round(60 * this.player.clutchSituation * this.getCreditMultiplier());
+      creditReward += clutchCR;
+      CS.ui.recordMedal('clutchesWon');
+      this.showMultiKillBanner(
+        '🏆🔥🏆',
+        `1v${this.player.clutchSituation} CLUTCH GEWONNEN!`,
+        `+${clutchCR} CLUTCH BONUS CR`,
+        true
+      );
+    }
+
+    CS.ui.addCredits(creditReward, `${playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen'} (${diffData.name} • ${diffData.badge})`);
     CS.ui.addXP(xpReward);
 
     CS.audio.announce(winningTeam === 'CT' ? 'Counter-Terrorists Win' : 'Terrorists Win');
@@ -559,10 +649,10 @@ class TacticalGame {
       titleEl.textContent = winningTeam === 'CT' ? '🛡️ COUNTER-TERRORISTS GEWINNEN!' : '⚔️ TERRORISTEN GEWINNEN!';
       titleEl.style.color = winningTeam === 'CT' ? '#38bdf8' : '#fbbf24';
     }
-    if (reasonEl) reasonEl.textContent = `${reasonText} (+$${roundMoneyBonus} Match-Geld)`;
+    if (reasonEl) reasonEl.textContent = `${reasonText} (+$${roundMoneyBonus} Match-Geld • KI: ${diffData.name})`;
     if (scoreEl) scoreEl.textContent = `CT ${this.scores.CT} : ${this.scores.T} T`;
     if (kdEl) kdEl.textContent = `${this.player.kills} / ${this.player.deaths}`;
-    if (crEl) crEl.textContent = `+${creditReward} CR`;
+    if (crEl) crEl.textContent = `+${creditReward} CR (${diffData.creditMult}x)`;
 
     this.updateHUD();
     document.getElementById('round-end-overlay')?.classList.remove('hidden');
@@ -622,7 +712,8 @@ class TacticalGame {
       this.viewmodelGroup.remove(this.viewmodelGroup.children[0]);
     }
     const wData = this.getActiveWeaponData();
-    const skinId = CS.ui.profile.weaponSkins[wData.id] || 'default';
+    const slotObj = this.player.slots[this.player.activeSlot];
+    const skinId = (slotObj && slotObj.skinId) ? slotObj.skinId : (CS.ui.profile.weaponSkins[wData.id] || 'default');
     const knifeModelId = CS.ui.profile.equippedKnife || 'knife_default';
     const gloveId = CS.ui.profile.equippedGlove || 'gloves_default';
     const outfitId = CS.ui.profile.equippedOutfit || 'sas_navy';
@@ -630,7 +721,6 @@ class TacticalGame {
     const model = CS.weaponBuilder.buildWeaponModel(wData.id, skinId, knifeModelId, gloveId, outfitId, true);
 
     // Check if silencer is detached on USP-S / M4A1-S
-    const slotObj = this.player.slots[this.player.activeSlot];
     if (slotObj && wData.canToggleSilencer && slotObj.silenced === false) {
       const sup = model.getObjectByName('silencerMesh');
       if (sup) sup.visible = false;
@@ -793,6 +883,8 @@ class TacticalGame {
   fireSingleRound(wData, slotObj) {
     slotObj.mag--;
     this.player.shotsFired++;
+    CS.ui.recordShotFired(wData.id);
+    this._currentShotHitRecorded = false;
 
     const soundType = (wData.canToggleSilencer && !slotObj.silenced) ? 'rifle_m4' : wData.soundType;
     CS.audio.playGunshot(soundType);
@@ -804,6 +896,17 @@ class TacticalGame {
       this.muzzleFlashLight.intensity = 2.6;
       this.muzzleFlashMesh.visible = true;
       this.muzzleFlashMesh.rotation.z = Math.random() * Math.PI;
+
+      // Alert enemy bots within their difficulty hearing range when firing unsilenced weapons
+      for (const b of this.bots) {
+        if (!b.dead && b.team !== this.player.team) {
+          const hRange = b.getDifficultyConfig(this).hearingRange || 0;
+          if (hRange > 0 && b.position.distanceTo(this.player.position) <= hRange) {
+            b.alertTimer = Math.max(b.alertTimer, 4.2);
+            b.alertTargetPos = this.player.position.clone();
+          }
+        }
+      }
     }
 
     // Calculate Dynamic Spread (Movement + Crouch + Scope + Recoil)
@@ -821,6 +924,9 @@ class TacticalGame {
     for (let p = 0; p < pellets; p++) {
       this.castBulletRay(wData, spread, !isSilenced);
     }
+
+    // Eject 3D Brass Shell Casing
+    this.spawnShellCasing(wData);
 
     // Apply Controlled CS Recoil Kick (low & smooth so spraying feels responsive)
     this.player.recoilKick = Math.min(0.068, this.player.recoilKick + 0.022);
@@ -899,6 +1005,9 @@ class TacticalGame {
           const mult = isHead ? (wData.headMult || 3.5) : (part === 'legs' ? 0.75 : 1.0);
           const dmg = wData.damage * mult * (bot.armor > 0 ? wData.armorPen : 1.0);
 
+          CS.ui.recordShotHit(wData.id, dmg, isHead, !this._currentShotHitRecorded);
+          this._currentShotHitRecorded = true;
+
           CS.audio.playHitmarker(isHead);
           this.flashHitmarkerUI(isHead);
           this.spawnImpactParticles(hit.point, isHead ? 0xffdd00 : 0xef4444, isHead ? 12 : 7);
@@ -909,8 +1018,9 @@ class TacticalGame {
           }
         }
       } else {
-        // Bullet impact on map wall/crate
+        // Bullet impact on map wall/crate + persistent 3D bullet hole decal
         this.spawnImpactParticles(hit.point, 0xfacc15, 5);
+        this.spawnBulletDecal(hit);
       }
     }
 
@@ -921,6 +1031,7 @@ class TacticalGame {
   }
 
   performKnifeHit(wData, isHeavy) {
+    CS.ui.recordShotFired('knife');
     const euler = new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ');
     const dir = new THREE.Vector3(0, 0, -1).applyEuler(euler);
     this.raycaster.set(this.camera.position, dir);
@@ -941,6 +1052,8 @@ class TacticalGame {
         const botForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), bot.yaw);
         const isBackstab = dir.dot(botForward) > 0.35;
         const dmg = isBackstab ? wData.backstabDamage : (isHeavy ? wData.heavyDamage : wData.damage);
+
+        CS.ui.recordShotHit('knife', dmg, isBackstab, true);
 
         CS.audio.playHitmarker(isBackstab);
         this.flashHitmarkerUI(isBackstab);
@@ -1000,24 +1113,28 @@ class TacticalGame {
       // High-Explosive Shrapnel & Shockwave
       this.spawnImpactParticles(g.position, 0xff7700, 32, 8.5);
       const radius = 10.5;
+      const attacker = g.owner || this.player;
+      const isPlayerOwner = attacker === this.player;
       // Damage bots
       for (const b of this.bots) {
         if (b.dead) continue;
+        if (!isPlayerOwner && b.team === attacker.team) continue; // Avoid bot friendly-fire
         const d = b.position.distanceTo(g.position);
         if (d < radius) {
           const dmg = (1 - d / radius) * 98;
-          if (b.team !== this.player.team) {
+          if (isPlayerOwner && b.team !== this.player.team) {
+            CS.ui.recordDamageOnly(dmg);
             CS.audio.playHitmarker(false);
             this.flashHitmarkerUI(false);
           }
-          const killed = b.takeDamage(dmg, this.player, false);
-          if (killed) this.onEntityKilled(this.player, b, 'he', false);
+          const killed = b.takeDamage(dmg, attacker, false);
+          if (killed) this.onEntityKilled(attacker, b, 'he', false);
         }
       }
       // Damage player if too close
       const pDist = this.player.position.distanceTo(g.position);
       if (pDist < radius) {
-        this.damagePlayer((1 - pDist / radius) * 65, null, false);
+        this.damagePlayer((1 - pDist / radius) * 65, isPlayerOwner ? null : attacker, false);
       }
     } else if (g.type === 'flash') {
       this.spawnImpactParticles(g.position, 0xffffff, 20, 6);
@@ -1157,6 +1274,9 @@ class TacticalGame {
     this.plantedBomb.mesh = c4Mesh;
 
     this.roundPhase = 'planted';
+    if (planterName === CS.ui.profile.playerName) {
+      CS.ui.recordMedal('bombsPlanted');
+    }
     CS.audio.announce('The bomb has been planted');
     this.showBanner(`⚠️ BOMBE PLATZIERT AUF ${siteName}!`, `${planterName} hat das C4 scharf gemacht (40s Countdown)`);
 
@@ -1171,18 +1291,23 @@ class TacticalGame {
       this.scene.remove(this.plantedBomb.mesh);
       this.plantedBomb.mesh = null;
     }
+    if (defuserName === CS.ui.profile.playerName) {
+      CS.ui.recordMedal('bombsDefused');
+    }
     if (this.player.team === 'CT') {
+      const defuseCR = Math.round(150 * this.getCreditMultiplier());
       this.player.money = Math.min(16000, this.player.money + 2500);
-      CS.ui.addCredits(150, 'Bombe entschärft Bonus!');
+      CS.ui.addCredits(defuseCR, 'Bombe entschärft Bonus!');
     }
     CS.audio.announce('The bomb has been defused');
 
     if (this.currentMode === 'bomb') {
       this.endRound('CT', `✂️ Bombe wurde von ${defuserName} entschärft!`);
     } else {
+      const defuseCR = Math.round(150 * this.getCreditMultiplier());
       this.roundPhase = 'live';
       this.scores.CT += 5;
-      this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, '+5 Punkte für CT • +$2.500 Match-Geld • +150 CR!');
+      this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, `+5 Punkte für CT • +$2.500 Match-Geld • +${defuseCR} CR!`);
       this.reassignC4AfterExplosion();
     }
   }
@@ -1199,6 +1324,7 @@ class TacticalGame {
     CS.audio.playExplosion('c4');
     this.spawnImpactParticles(bPos, 0xff5500, 65, 18);
 
+    const detonateCR = Math.round(150 * this.getCreditMultiplier());
     if (this.currentMode === 'bomb') {
       // Massive blast radius at the bombsite; suppress intermediate team-wipe check because the bomb explosion itself wins the round for T!
       this._suppressWinCheck = true;
@@ -1214,7 +1340,7 @@ class TacticalGame {
 
       if (this.player.team === 'T') {
         this.player.money = Math.min(16000, this.player.money + 2500);
-        CS.ui.addCredits(150, 'C4 Detonation Bonus!');
+        CS.ui.addCredits(detonateCR, 'C4 Detonation Bonus!');
       }
       this.endRound('T', `💥 Bombenplatz ${siteName} wurde durch das C4 gesprengt!`);
     } else {
@@ -1229,8 +1355,8 @@ class TacticalGame {
       }
       this.scores.T += 5;
       this.player.money = Math.min(16000, this.player.money + 2500);
-      CS.ui.addCredits(150, 'C4 Detonation Bonus!');
-      this.showBanner(`💥 BOMBENPLATZ ${siteName} GESPRENGT!`, '+5 Punkte für Terroristen • +$2.500 Match-Geld • +150 CR!');
+      CS.ui.addCredits(detonateCR, 'C4 Detonation Bonus!');
+      this.showBanner(`💥 BOMBENPLATZ ${siteName} GESPRENGT!`, `+5 Punkte für Terroristen • +$2.500 Match-Geld • +${detonateCR} CR!`);
       this.reassignC4AfterExplosion();
     }
   }
@@ -1294,6 +1420,10 @@ class TacticalGame {
 
     CS.ui.addKillfeedEntry(killerName, killer ? killer.team : victim.team, victimName, victim.team, weaponId, isHeadshot);
 
+    if (isPlayerVictim) {
+      CS.ui.recordDeath();
+    }
+
     if (killer) {
       killer.kills++;
       if (this.currentMode !== 'bomb') {
@@ -1302,11 +1432,17 @@ class TacticalGame {
       const wReward = CS.WEAPONS[weaponId]?.killReward || 300;
       killer.money = Math.min(16000, (killer.money || 0) + wReward);
 
-      if (isPlayerKiller) {
-        CS.ui.profile.totalKills++;
-        const crBonus = isHeadshot ? 75 : 50;
-        CS.ui.addCredits(crBonus, isHeadshot ? 'Kopfschuss-Kill!' : 'Gegner eliminiert');
-        CS.ui.addXP(40);
+      if (isPlayerKiller && !isPlayerVictim) {
+        const baseKillCR = isHeadshot ? 75 : 50;
+        const crBonus = Math.max(5, Math.round(baseKillCR * this.getCreditMultiplier()));
+        const xpBonus = Math.max(10, Math.round(40 * this.getXPMultiplier()));
+        const diffData = this.getDifficultyData();
+        CS.ui.addCredits(crBonus, `${isHeadshot ? '🎯 Kopfschuss-Kill!' : 'Gegner eliminiert'} (${diffData.name})`);
+        CS.ui.addXP(xpBonus);
+
+        // Track Round Kills & Multi-Kill Streaks (First Blood, Double Kill -> ACE!)
+        this.handlePlayerKillStreak(isHeadshot);
+        CS.ui.recordKill(weaponId, isHeadshot, this.player.roundKills || 1);
       }
 
       // Arms Race Weapon Upgrade
@@ -1330,6 +1466,22 @@ class TacticalGame {
       if (victim.hasC4) {
         victim.hasC4 = false;
         this.dropC4(victim.position);
+      }
+      // Killed bots drop their equipped firearm (including rare skins!) so players can loot it with [E]
+      if (this.currentMode !== 'armsrace' && victim.weaponId && victim.weaponId !== 'knife') {
+        this.spawnDroppedWeapon(victim.weaponId, victim.skinId || 'default', victim.position);
+      }
+    }
+
+    // Track 1vX Clutch situation in Bomb mode when player is the last living teammate
+    if (this.currentMode === 'bomb' && !this.player.dead) {
+      const alliesAlive = this.bots.filter(b => !b.dead && b.team === this.player.team).length;
+      const enemiesAlive = this.bots.filter(b => !b.dead && b.team !== this.player.team).length;
+      if (alliesAlive === 0 && enemiesAlive >= 2) {
+        if ((this.player.clutchSituation || 0) < enemiesAlive) {
+          this.player.clutchSituation = enemiesAlive;
+          CS.ui.showToast(`🔥 1v${enemiesAlive} CLUTCH-SITUATION! Du bist der letzte Überlebende deines Teams!`, 'gold');
+        }
       }
     }
 
@@ -1378,11 +1530,14 @@ class TacticalGame {
     }
     this.player.health = Math.max(0, this.player.health - Math.max(1, dmg));
 
-    // Flash red damage vignette
+    // Flash red damage vignette & Directional Damage Indicator Arc
     const vig = document.getElementById('damage-vignette');
     if (vig) {
       vig.style.opacity = '0.75';
       setTimeout(() => { vig.style.opacity = '0'; }, 240);
+    }
+    if (attacker && attacker.position) {
+      this.spawnDamageIndicator(attacker.position);
     }
 
     if (this.player.health <= 0) {
@@ -1533,6 +1688,68 @@ class TacticalGame {
     this.updateHUD();
   }
 
+  spawnDroppedWeapon(weaponId, skinId = 'default', basePos, customItemData = null, throwForwardVec = null) {
+    const wData = CS.WEAPONS[weaponId];
+    if (!wData || (wData.slot !== 1 && wData.slot !== 2)) return null;
+
+    // Limit total dropped weapons on the ground to keep scene clean
+    if (this.droppedItems.length >= 16) {
+      const oldest = this.droppedItems.shift();
+      if (oldest && oldest.mesh) this.scene.remove(oldest.mesh);
+    }
+
+    const wrap = new THREE.Group();
+    const gunMesh = CS.weaponBuilder.buildWeaponModel(weaponId, skinId, 'knife_default', 'gloves_default', 'sas_navy', false);
+    gunMesh.scale.set(1.42, 1.42, 1.42);
+    gunMesh.rotation.z = Math.PI / 2;
+    gunMesh.position.y = 0.16;
+    wrap.add(gunMesh);
+
+    // Subtle rarity highlight ring underneath the dropped weapon
+    const sObj = CS.SKINS[skinId] || CS.SKINS.default;
+    const rarColor = CS.RARITIES[sObj.rarity]?.color || '#38bdf8';
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.32, 0.42, 20),
+      new THREE.MeshBasicMaterial({ color: rarColor, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    wrap.add(ring);
+
+    const dropPos = basePos.clone();
+    if (throwForwardVec) {
+      dropPos.addScaledVector(throwForwardVec, 1.55);
+    } else {
+      dropPos.x += (Math.random() - 0.5) * 0.7;
+      dropPos.z += (Math.random() - 0.5) * 0.7;
+    }
+    wrap.position.set(dropPos.x, dropPos.y || 0, dropPos.z);
+    wrap.rotation.y = Math.random() * Math.PI * 2;
+    this.scene.add(wrap);
+
+    const itemData = customItemData
+      ? { ...customItemData, skinId }
+      : {
+          id: weaponId,
+          mag: wData.magSize,
+          reserve: wData.reserveAmmo,
+          burstMode: false,
+          silenced: !!wData.silenced,
+          skinId
+        };
+
+    const entry = {
+      slot: wData.slot,
+      weaponId,
+      skinId,
+      itemData,
+      mesh: wrap,
+      position: wrap.position
+    };
+    this.droppedItems.push(entry);
+    return entry;
+  }
+
   dropCurrentWeapon() {
     const s = this.player.activeSlot;
     if (s === 5 && this.player.slots[5]) {
@@ -1547,35 +1764,306 @@ class TacticalGame {
     const item = this.player.slots[s];
     if (!item) return;
 
-    const skinId = CS.ui.profile.weaponSkins[item.id] || 'default';
-    const mesh = CS.weaponBuilder.buildWeaponModel(item.id, skinId, 'knife_default', 'gloves_default', 'sas_navy', false);
-    mesh.scale.set(1.4, 1.4, 1.4);
+    const skinId = item.skinId || CS.ui.profile.weaponSkins[item.id] || 'default';
     const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.yaw);
-    mesh.position.copy(this.player.position).addScaledVector(forward, 1.6);
-    mesh.position.y += 0.2;
-    mesh.rotation.z = Math.PI / 2;
-    this.scene.add(mesh);
-
-    this.droppedItems.push({
-      slot: s,
-      itemData: { ...item },
-      mesh,
-      position: mesh.position
-    });
+    this.spawnDroppedWeapon(item.id, skinId, this.player.position, item, forward);
 
     this.player.slots[s] = null;
     this.switchSlot(this.player.slots[1] ? 1 : (this.player.slots[2] ? 2 : 3));
   }
 
-  sendRadioCommand(text) {
-    CS.audio.announce(text);
-    CS.ui.showToast(`📻 FUNK: "${text}"`, 'info');
-    // Rally nearby allied bots toward player's target area
-    for (const b of this.bots) {
-      if (!b.dead && b.team === this.player.team) {
-        b.targetWaypoint = { x: this.player.position.x + (Math.random() - 0.5) * 6, z: this.player.position.z + (Math.random() - 0.5) * 6 };
+  sendRadioCommand(cmdType) {
+    const livingAllies = this.bots.filter(b => !b.dead && b.team === this.player.team);
+    const responder = livingAllies.length > 0 ? livingAllies[Math.floor(Math.random() * livingAllies.length)] : null;
+
+    if (cmdType === 'rush') {
+      // Determine target bombsite: planted bomb site, or whichever site (A/B) the player is looking toward
+      let targetSite = 'A';
+      if (this.plantedBomb && this.plantedBomb.active) {
+        targetSite = this.plantedBomb.site.includes('B') ? 'B' : 'A';
+      } else {
+        const siteA = CS.mapBuilder.bombsites?.A;
+        const siteB = CS.mapBuilder.bombsites?.B;
+        if (siteA && siteB) {
+          const forward = new THREE.Vector3(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw));
+          const toA = new THREE.Vector3(siteA.x - this.player.position.x, 0, siteA.z - this.player.position.z).normalize();
+          const toB = new THREE.Vector3(siteB.x - this.player.position.x, 0, siteB.z - this.player.position.z).normalize();
+          targetSite = forward.dot(toB) > forward.dot(toA) ? 'B' : 'A';
+        }
+      }
+
+      CS.audio.announce(`Rush Bombsite ${targetSite}!`);
+      this.activeSquadOrder = { label: `⚡ RUSH BOMBSITE ${targetSite}`, timer: 25 };
+      livingAllies.forEach(b => {
+        b.tacticalOrder = { type: 'rush', siteKey: targetSite, timer: 25 };
+        b.currentNavNode = null;
+        b.pickNextWaypoint(this.plantedBomb);
+      });
+
+      const reply = responder ? ` • 🤖 BOT ${responder.name}: "Verstanden! Stürme Spot ${targetSite}!"` : '';
+      CS.ui.showToast(`📻 [Z] FUNK: "Alle Mann auf Bombenplatz ${targetSite}!"${reply}`, 'gold');
+    } else if (cmdType === 'follow') {
+      CS.audio.announce('Need backup! Follow me!');
+      this.activeSquadOrder = { label: '🛡️ ESKORTE (FOLGT MIR)', timer: 25 };
+      livingAllies.forEach((b, idx) => {
+        const angle = (idx / Math.max(1, livingAllies.length)) * Math.PI * 2;
+        b.tacticalOrder = {
+          type: 'follow',
+          offsetX: Math.cos(angle) * 2.6,
+          offsetZ: Math.sin(angle) * 2.6,
+          timer: 25
+        };
+        b.currentNavNode = null;
+        b.pickNextWaypoint(this.plantedBomb);
+      });
+
+      const reply = responder ? ` • 🤖 BOT ${responder.name}: "Bin unterwegs! Gebe dir Rückendeckung!"` : '';
+      CS.ui.showToast(`📻 [X] FUNK: "Brauche Rückendeckung! Folgt mir!"${reply}`, 'info');
+    } else if (cmdType === 'hold') {
+      CS.audio.announce('Hold this position!');
+      this.activeSquadOrder = { label: '⚓ POSITION HALTEN & SICHERN', timer: 22 };
+      livingAllies.forEach(b => {
+        b.tacticalOrder = {
+          type: 'hold',
+          pos: b.position.clone(),
+          timer: 22
+        };
+      });
+
+      const reply = responder ? ` • 🤖 BOT ${responder.name}: "Roger! Halte und sichere diesen Sektor!"` : '';
+      CS.ui.showToast(`📻 [V] FUNK: "Position halten & Winkel abdecken!"${reply}`, 'info');
+    }
+    this.updateHUD();
+  }
+
+  handlePlayerKillStreak(isHeadshot = false) {
+    const nowSec = performance.now() * 0.001;
+    this.player.roundKills = (this.player.roundKills || 0) + 1;
+
+    if (this.currentMode === 'bomb') {
+      this.player.multiKillCount = this.player.roundKills;
+    } else {
+      if (nowSec - (this.player.lastKillTime || 0) <= 8.5) {
+        this.player.multiKillCount = (this.player.multiKillCount || 0) + 1;
+      } else {
+        this.player.multiKillCount = 1;
       }
     }
+    this.player.lastKillTime = nowSec;
+
+    const streak = this.player.multiKillCount;
+
+    // 1. First Blood Check (First kill of the round!)
+    if (!this.roundFirstBloodAwarded) {
+      this.roundFirstBloodAwarded = true;
+      CS.ui.recordMedal('firstBloods');
+      const fbBonus = Math.max(10, Math.round(25 * this.getCreditMultiplier()));
+      CS.ui.addCredits(fbBonus, '🩸 First Blood Bonus!');
+      if (streak === 1) {
+        CS.audio.playKillStreakSound(1);
+        this.showMultiKillBanner('🩸🎯', 'FIRST BLOOD!', `+${fbBonus} CR ERSTER ABSCHUSS`, false);
+        return;
+      }
+    }
+
+    // 2. Multi-Kill Medals (Double Kill -> Triple Kill -> Ultra Kill -> ACE!)
+    if (streak === 2) {
+      CS.ui.recordMedal('doubleKills');
+      const bonus = Math.round(25 * this.getCreditMultiplier());
+      CS.ui.addCredits(bonus, '⚡ Double Kill Bonus!');
+      CS.audio.playKillStreakSound(2);
+      CS.audio.announce('Double Kill');
+      this.showMultiKillBanner('💀💀', '⚡ DOUBLE KILL!', `+${bonus} BONUS CREDITS`, false);
+    } else if (streak === 3) {
+      CS.ui.recordMedal('tripleKills');
+      const bonus = Math.round(50 * this.getCreditMultiplier());
+      CS.ui.addCredits(bonus, '🔥 Triple Kill Bonus!');
+      CS.audio.playKillStreakSound(3);
+      CS.audio.announce('Triple Kill');
+      this.showMultiKillBanner('💀💀💀', '🔥 TRIPLE KILL!', `+${bonus} BONUS CREDITS`, false);
+    } else if (streak === 4) {
+      CS.ui.recordMedal('ultraKills');
+      const bonus = Math.round(85 * this.getCreditMultiplier());
+      CS.ui.addCredits(bonus, '💀 Ultra Kill Bonus!');
+      CS.audio.playKillStreakSound(4);
+      CS.audio.announce('Ultra Kill');
+      this.showMultiKillBanner('💀💀💀💀', '💥 ULTRA KILL!', `+${bonus} BONUS CREDITS`, false);
+    } else if (streak >= 5) {
+      CS.ui.recordMedal('aces');
+      const bonus = Math.round(150 * this.getCreditMultiplier());
+      CS.ui.addCredits(bonus, '👑 ★ A C E ★ Bonus!');
+      CS.audio.playKillStreakSound(5);
+      CS.audio.announce('Ace! Entire enemy team eliminated!');
+      this.showMultiKillBanner('👑💀💀💀💀💀👑', '★ A C E ! ★ (TEAM WIPE)', `+${bonus} LEGENDÄRER ACE-BONUS CR!`, true);
+    }
+  }
+
+  showMultiKillBanner(skullsText, titleText, subText, isAce = false) {
+    const banner = document.getElementById('multikill-banner');
+    const skullsEl = document.getElementById('multikill-skulls');
+    const titleEl = document.getElementById('multikill-title');
+    const subEl = document.getElementById('multikill-sub');
+    if (!banner) return;
+
+    if (skullsEl) skullsEl.textContent = skullsText;
+    if (titleEl) titleEl.textContent = titleText;
+    if (subEl) subEl.textContent = subText;
+    banner.classList.toggle('ace-banner', !!isAce);
+    banner.classList.remove('hidden');
+
+    // Restart pop animation cleanly
+    banner.style.animation = 'none';
+    void banner.offsetWidth;
+    banner.style.animation = '';
+
+    clearTimeout(this._mkBannerTimeout);
+    this._mkBannerTimeout = setTimeout(() => {
+      banner.classList.add('hidden');
+    }, isAce ? 4200 : 2700);
+  }
+
+  getBulletDecalMaterial() {
+    if (this._bulletDecalMat) return this._bulletDecalMat;
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext('2d');
+
+    // Outer scorched powder ring
+    const grad = ctx.createRadialGradient(32, 32, 3, 32, 32, 26);
+    grad.addColorStop(0, 'rgba(8, 10, 14, 0.96)');
+    grad.addColorStop(0.38, 'rgba(22, 25, 32, 0.85)');
+    grad.addColorStop(0.7, 'rgba(55, 60, 70, 0.35)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Radial impact cracks
+    ctx.strokeStyle = 'rgba(15, 18, 24, 0.78)';
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3;
+      ctx.beginPath();
+      ctx.moveTo(32 + Math.cos(a) * 5, 32 + Math.sin(a) * 5);
+      ctx.lineTo(32 + Math.cos(a + 0.12) * 23, 32 + Math.sin(a - 0.1) * 23);
+      ctx.stroke();
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    this._bulletDecalMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2
+    });
+    return this._bulletDecalMat;
+  }
+
+  spawnBulletDecal(hit) {
+    if (!hit || !hit.face || !hit.object) return;
+    const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+    const decalGeo = new THREE.PlaneGeometry(0.17, 0.17);
+    const decalMesh = new THREE.Mesh(decalGeo, this.getBulletDecalMaterial());
+
+    decalMesh.position.copy(hit.point).addScaledVector(normal, 0.012);
+    const lookTarget = decalMesh.position.clone().add(normal);
+    decalMesh.lookAt(lookTarget);
+    decalMesh.rotateZ(Math.random() * Math.PI * 2);
+
+    this.scene.add(decalMesh);
+    this.bulletDecals.push({ mesh: decalMesh });
+
+    if (this.bulletDecals.length > 65) {
+      const oldest = this.bulletDecals.shift();
+      if (oldest && oldest.mesh) this.scene.remove(oldest.mesh);
+    }
+  }
+
+  spawnShellCasing(wData) {
+    if (!this.camera || !wData || wData.id === 'knife') return;
+    const isShotgun = wData.pellets && wData.pellets > 1;
+    const shellMat = new THREE.MeshStandardMaterial({
+      color: isShotgun ? 0xdc2626 : 0xfbbf24,
+      metalness: isShotgun ? 0.3 : 0.88,
+      roughness: 0.25
+    });
+    const shellGeo = new THREE.CylinderGeometry(0.011, 0.011, isShotgun ? 0.055 : 0.042, 6);
+    const mesh = new THREE.Mesh(shellGeo, shellMat);
+
+    const euler = new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ');
+    const ejectOffset = new THREE.Vector3(0.22, -0.11, -0.32).applyEuler(euler);
+    mesh.position.copy(this.camera.position).add(ejectOffset);
+    mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    this.scene.add(mesh);
+
+    const rightDir = new THREE.Vector3(1, 0.45 + Math.random() * 0.25, 0.15).normalize().applyEuler(euler);
+    const speed = 2.6 + Math.random() * 1.1;
+
+    this.shellCasings.push({
+      mesh,
+      vel: rightDir.multiplyScalar(speed).addScaledVector(this.player.velocity, 0.4),
+      bounced: false,
+      timer: 2.2
+    });
+
+    if (this.shellCasings.length > 25) {
+      const oldest = this.shellCasings.shift();
+      if (oldest && oldest.mesh) this.scene.remove(oldest.mesh);
+    }
+  }
+
+  spawnDamageIndicator(sourcePos) {
+    const container = document.getElementById('damage-indicator-container');
+    if (!container || !sourcePos) return;
+
+    const arcEl = document.createElement('div');
+    arcEl.className = 'damage-arc';
+    container.appendChild(arcEl);
+
+    const entry = {
+      el: arcEl,
+      sourcePos: sourcePos.clone(),
+      timer: 1.5,
+      maxTimer: 1.5
+    };
+    this.damageIndicators.push(entry);
+    this.updateSingleDamageIndicator(entry);
+  }
+
+  updateSingleDamageIndicator(ind) {
+    const dx = ind.sourcePos.x - this.player.position.x;
+    const dz = ind.sourcePos.z - this.player.position.z;
+    // Player looks toward (-sin(yaw), -cos(yaw))
+    const targetYaw = Math.atan2(-dx, -dz);
+    const relAngle = this.player.yaw - targetYaw;
+    const alpha = Math.max(0, Math.min(1, ind.timer / ind.maxTimer));
+    ind.el.style.transform = `rotate(${relAngle.toFixed(3)}rad)`;
+    ind.el.style.opacity = alpha.toFixed(2);
+  }
+
+  updateDamageIndicators(dt) {
+    for (let i = this.damageIndicators.length - 1; i >= 0; i--) {
+      const ind = this.damageIndicators[i];
+      ind.timer -= dt;
+      if (ind.timer <= 0) {
+        ind.el.remove();
+        this.damageIndicators.splice(i, 1);
+      } else {
+        this.updateSingleDamageIndicator(ind);
+      }
+    }
+  }
+
+  clearDamageIndicators() {
+    if (this.damageIndicators) {
+      this.damageIndicators.forEach(ind => ind.el?.remove());
+    }
+    this.damageIndicators = [];
+    const container = document.getElementById('damage-indicator-container');
+    if (container) container.innerHTML = '';
   }
 
   // ==========================================================================
@@ -2040,20 +2528,43 @@ class TacticalGame {
     // C4 Planting & Defusing Interaction ([E] or Left Click with C4)
     this.updateBombInteraction(dt);
 
-    // Pickup Dropped Weapons with [E]
-    if (this.keys['KeyE']) {
-      for (let i = this.droppedItems.length - 1; i >= 0; i--) {
-        const dItem = this.droppedItems[i];
-        if (this.player.position.distanceTo(dItem.position) < 2.2) {
-          if (!this.player.slots[dItem.slot]) {
-            this.player.slots[dItem.slot] = dItem.itemData;
-            this.scene.remove(dItem.mesh);
-            this.droppedItems.splice(i, 1);
-            CS.audio.playUISound('buy');
-            this.switchSlot(dItem.slot);
-            break;
-          }
+    // Pickup / Swap Dropped Weapons with [E]
+    if (this.player.pickupCooldown > 0) this.player.pickupCooldown -= dt;
+    if (this.keys['KeyE'] && (this.player.pickupCooldown || 0) <= 0 && this.player.plantingProgress <= 0 && this.player.defusingProgress <= 0) {
+      let nearestIdx = -1;
+      let nearestDist = 2.4;
+      for (let i = 0; i < this.droppedItems.length; i++) {
+        const d = this.player.position.distanceTo(this.droppedItems[i].position);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestIdx = i;
         }
+      }
+      if (nearestIdx !== -1) {
+        const dItem = this.droppedItems[nearestIdx];
+        const targetSlot = dItem.slot;
+        const oldSlotData = this.player.slots[targetSlot];
+
+        // Remove picked-up weapon from ground first
+        this.scene.remove(dItem.mesh);
+        this.droppedItems.splice(nearestIdx, 1);
+
+        // If player already has a weapon in that slot, drop/swap it onto the ground
+        if (oldSlotData) {
+          const dropDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.yaw);
+          const dropPos = this.player.position.clone().addScaledVector(dropDir, 1.35);
+          this.spawnDroppedWeapon(oldSlotData, dropPos, oldSlotData.skinId);
+        }
+
+        this.player.slots[targetSlot] = dItem.itemData;
+        this.player.pickupCooldown = 0.45;
+        CS.audio.playUISound('buy');
+        const wName = CS.WEAPONS[dItem.weaponId]?.name || dItem.weaponId;
+        const sName = dItem.skinId && dItem.skinId !== 'default' ? ` | ${CS.SKINS[dItem.skinId]?.name}` : '';
+        CS.ui.showToast(`🔫 Aufgehoben: ${wName}${sName}`, 'info');
+        this.switchSlot(targetSlot);
+        this.rebuildViewmodel();
+        this.updateHUD();
       }
     }
 
@@ -2132,6 +2643,25 @@ class TacticalGame {
         } else {
           this.player.defusingProgress = 0;
         }
+      }
+    }
+
+    // 3. Nearby Dropped Weapon Prompt if not planting/defusing C4
+    if (!showPrompt && !this.player.dead) {
+      let nearestItem = null;
+      let nearestDist = 2.4;
+      for (const dItem of this.droppedItems) {
+        const d = this.player.position.distanceTo(dItem.position);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestItem = dItem;
+        }
+      }
+      if (nearestItem) {
+        const wName = CS.WEAPONS[nearestItem.weaponId]?.name || nearestItem.weaponId;
+        const skinLabel = nearestItem.skinId && nearestItem.skinId !== 'default' ? ` | ${CS.SKINS[nearestItem.skinId]?.name}` : '';
+        const actionVerb = this.player.slots[nearestItem.slot] ? 'Tauschen gegen' : 'Aufheben:';
+        showPrompt = `Drücke [E] zum ${actionVerb} ${wName}${skinLabel}`;
       }
     }
 
@@ -2285,6 +2815,51 @@ class TacticalGame {
         this.particles.splice(i, 1);
       }
     }
+
+    // 6. Ejected 3D Brass Shell Casings (with floor bounce & metallic clink)
+    const groundRefY = (this.player.position.y || 0) + 0.025;
+    for (let i = this.shellCasings.length - 1; i >= 0; i--) {
+      const c = this.shellCasings[i];
+      c.timer -= dt;
+      c.vel.y -= 16.5 * dt;
+      c.mesh.position.addScaledVector(c.vel, dt);
+      c.mesh.rotation.x += c.rotVel.x * dt;
+      c.mesh.rotation.y += c.rotVel.y * dt;
+      c.mesh.rotation.z += c.rotVel.z * dt;
+
+      if (c.mesh.position.y <= groundRefY) {
+        c.mesh.position.y = groundRefY;
+        c.vel.y *= -0.38;
+        c.vel.x *= 0.65;
+        c.vel.z *= 0.65;
+        c.rotVel.multiplyScalar(0.5);
+        if (!c.bounced) {
+          c.bounced = true;
+          CS.audio.playShellClink();
+        }
+      }
+
+      if (c.timer <= 0) {
+        this.scene.remove(c.mesh);
+        this.shellCasings.splice(i, 1);
+      }
+    }
+
+    // 7. Gently hover/rotate dropped weapons on the ground
+    for (const dItem of this.droppedItems) {
+      if (dItem.mesh) {
+        dItem.mesh.rotation.y += dt * 0.65;
+      }
+    }
+
+    // 8. Directional Damage Indicators & Active Squad Order Timer
+    this.updateDamageIndicators(dt);
+    if (this.activeSquadOrder) {
+      this.activeSquadOrder.timer -= dt;
+      if (this.activeSquadOrder.timer <= 0) {
+        this.activeSquadOrder = null;
+      }
+    }
   }
 
   updateViewmodelAnimations(dt) {
@@ -2408,11 +2983,25 @@ class TacticalGame {
       }
     }
 
-    // Alive Counts
+    // Alive Counts & Active AI Difficulty Badge
     const ctAlive = (this.player.team === 'CT' && !this.player.dead ? 1 : 0) + this.bots.filter(b => b.team === 'CT' && !b.dead).length;
     const tAlive = (this.player.team === 'T' && !this.player.dead ? 1 : 0) + this.bots.filter(b => b.team === 'T' && !b.dead).length;
+    const diffData = this.getDifficultyData();
     const aliveEl = document.getElementById('hud-alive-counts');
-    if (aliveEl) aliveEl.textContent = `${ctAlive} Alive vs ${tAlive} Alive`;
+    if (aliveEl) {
+      aliveEl.innerHTML = `${ctAlive} Alive vs ${tAlive} Alive &bull; <span style="color:${diffData.color}">${diffData.icon} KI: ${diffData.name.toUpperCase()} (${diffData.creditMult}x CR)</span>`;
+    }
+
+    // Active Tactical Squad Order Badge below Radar
+    const squadBadge = document.getElementById('squad-order-badge');
+    if (squadBadge) {
+      if (this.activeSquadOrder && this.activeSquadOrder.timer > 0) {
+        squadBadge.classList.remove('hidden');
+        squadBadge.textContent = `${this.activeSquadOrder.label} (${Math.ceil(this.activeSquadOrder.timer)}s)`;
+      } else {
+        squadBadge.classList.add('hidden');
+      }
+    }
 
     // Spawn Shield HUD Badge & Protective Screen Glow
     const shieldBadge = document.getElementById('spawn-shield-badge');
@@ -2457,7 +3046,7 @@ class TacticalGame {
     }
 
     if (wNameEl) {
-      const skinId = CS.ui.profile.weaponSkins[wData.id] || 'default';
+      const skinId = (slotObj && slotObj.skinId) ? slotObj.skinId : (CS.ui.profile.weaponSkins[wData.id] || 'default');
       const skinLabel = skinId !== 'default' ? ` | ${CS.SKINS[skinId]?.name}` : '';
       const displayName = wData.id === 'knife' ? CS.KNIFE_MODELS[CS.ui.profile.equippedKnife]?.name : wData.name;
       wNameEl.textContent = `${displayName}${skinLabel}`;

@@ -28,7 +28,38 @@ class UIManager {
     this.previewWeaponOverride = 'auto';
   }
 
+  getDefaultStats() {
+    return {
+      kills: 0,
+      deaths: 0,
+      headshotKills: 0,
+      roundsPlayed: 0,
+      roundsWon: 0,
+      roundsLost: 0,
+      shotsFired: 0,
+      shotsHit: 0,
+      totalDamage: 0,
+      bombsPlanted: 0,
+      bombsDefused: 0,
+      firstBloods: 0,
+      doubleKills: 0,
+      tripleKills: 0,
+      ultraKills: 0,
+      aces: 0,
+      clutchesWon: 0,
+      bestKillStreak: 0,
+      casesOpened: 0,
+      totalCreditsEarned: 0,
+      weaponKills: {},
+      weaponHeadshots: {},
+      weaponShots: {},
+      weaponHits: {},
+      mapRounds: {}
+    };
+  }
+
   loadProfile() {
+    const defaultStats = this.getDefaultStats();
     const defaultProfile = {
       playerName: 'StrikeCommander',
       credits: 0, // Starts at 0 credits - earn through playing matches!
@@ -55,8 +86,10 @@ class UIManager {
         crosshairColor: '#00ff66',
         crosshairSize: 8,
         crosshairGap: 4,
-        botCount: 4 // 5v5 (Player + 4 allies vs 5 enemies)
-      }
+        botCount: 4, // 5v5 (Player + 4 allies vs 5 enemies)
+        difficulty: 'hard' // Default AI difficulty ('easy', 'medium', 'hard', 'nightmare')
+      },
+      stats: defaultStats
     };
 
     try {
@@ -67,15 +100,102 @@ class UIManager {
         parsed.credits = 0;
         parsed.economyVersion = 2;
       }
+      const mergedStats = {
+        ...defaultStats,
+        ...(parsed.stats || {}),
+        weaponKills: { ...(parsed.stats?.weaponKills || {}) },
+        weaponHeadshots: { ...(parsed.stats?.weaponHeadshots || {}) },
+        weaponShots: { ...(parsed.stats?.weaponShots || {}) },
+        weaponHits: { ...(parsed.stats?.weaponHits || {}) },
+        mapRounds: { ...(parsed.stats?.mapRounds || {}) }
+      };
+      // Migrate legacy totalKills if higher than stats.kills
+      if ((parsed.totalKills || 0) > (mergedStats.kills || 0)) {
+        mergedStats.kills = parsed.totalKills;
+      }
       return {
         ...defaultProfile,
         ...parsed,
         weaponSkins: { ...defaultProfile.weaponSkins, ...(parsed.weaponSkins || {}) },
-        settings: { ...defaultProfile.settings, ...(parsed.settings || {}) }
+        settings: { ...defaultProfile.settings, ...(parsed.settings || {}) },
+        stats: mergedStats
       };
     } catch (e) {
       return defaultProfile;
     }
+  }
+
+  ensureStats() {
+    if (!this.profile.stats) {
+      this.profile.stats = this.getDefaultStats();
+    }
+    return this.profile.stats;
+  }
+
+  recordShotFired(weaponId) {
+    const st = this.ensureStats();
+    st.shotsFired = (st.shotsFired || 0) + 1;
+    if (weaponId) {
+      st.weaponShots[weaponId] = (st.weaponShots[weaponId] || 0) + 1;
+    }
+  }
+
+  recordShotHit(weaponId, damage = 0, isHeadshot = false, countHit = true) {
+    const st = this.ensureStats();
+    if (countHit) {
+      st.shotsHit = (st.shotsHit || 0) + 1;
+      if (weaponId) {
+        st.weaponHits[weaponId] = (st.weaponHits[weaponId] || 0) + 1;
+      }
+    }
+    st.totalDamage = Math.round((st.totalDamage || 0) + Math.max(0, damage));
+  }
+
+  recordDamageOnly(damage = 0) {
+    const st = this.ensureStats();
+    st.totalDamage = Math.round((st.totalDamage || 0) + Math.max(0, damage));
+  }
+
+  recordKill(weaponId, isHeadshot = false, roundStreak = 1) {
+    const st = this.ensureStats();
+    st.kills = (st.kills || 0) + 1;
+    this.profile.totalKills = st.kills;
+    if (isHeadshot) {
+      st.headshotKills = (st.headshotKills || 0) + 1;
+      if (weaponId) {
+        st.weaponHeadshots[weaponId] = (st.weaponHeadshots[weaponId] || 0) + 1;
+      }
+    }
+    if (weaponId) {
+      st.weaponKills[weaponId] = (st.weaponKills[weaponId] || 0) + 1;
+    }
+    if (roundStreak > (st.bestKillStreak || 0)) {
+      st.bestKillStreak = roundStreak;
+    }
+    this.saveProfile();
+  }
+
+  recordDeath() {
+    const st = this.ensureStats();
+    st.deaths = (st.deaths || 0) + 1;
+    this.saveProfile();
+  }
+
+  recordMedal(medalKey) {
+    const st = this.ensureStats();
+    st[medalKey] = (st[medalKey] || 0) + 1;
+    this.saveProfile();
+  }
+
+  recordRoundEnd(won, mapId) {
+    const st = this.ensureStats();
+    st.roundsPlayed = (st.roundsPlayed || 0) + 1;
+    if (won) st.roundsWon = (st.roundsWon || 0) + 1;
+    else st.roundsLost = (st.roundsLost || 0) + 1;
+    if (mapId) {
+      st.mapRounds[mapId] = (st.mapRounds[mapId] || 0) + 1;
+    }
+    this.saveProfile();
   }
 
   saveProfile() {
@@ -86,6 +206,11 @@ class UIManager {
   }
 
   addCredits(amount, reason = '') {
+    const rounded = Math.round(amount);
+    if (rounded > 0) {
+      const st = this.ensureStats();
+      st.totalCreditsEarned = (st.totalCreditsEarned || 0) + rounded;
+    }
     this.profile.credits = Math.max(0, Math.round(this.profile.credits + amount));
     this.saveProfile();
     if (reason) this.showToast(`${amount >= 0 ? '+' : ''}${amount} CR — ${reason}`, 'gold');
@@ -114,9 +239,11 @@ class UIManager {
     this.bindLobbyEvents();
     this.updateHeaderStats();
     this.renderModeAndMapSelection();
+    this.renderDifficultySelectors();
     this.renderCustomizer();
     this.renderCasesTab();
     this.renderShopTab();
+    this.renderStatsTab();
     this.applySettingsToUI();
     this.updateCrosshairDOM();
   }
@@ -272,9 +399,48 @@ class UIManager {
         // Automatically switch 3D preview between full Agent and Weapon closeup
         if (tabId === 'loadout') {
           this.rebuildLobbyShowcase();
+        } else if (tabId === 'stats') {
+          this.renderStatsTab();
         }
       });
     });
+
+    // Player Name Callsign input & Reset Stats button on Stats tab
+    const nameInput = document.getElementById('stats-player-name-input');
+    if (nameInput) {
+      nameInput.value = this.profile.playerName || 'StrikeCommander';
+      nameInput.addEventListener('change', (e) => {
+        const cleaned = (e.target.value || '').trim().slice(0, 20) || 'StrikeCommander';
+        this.profile.playerName = cleaned;
+        e.target.value = cleaned;
+        this.saveProfile();
+        this.showToast(`✓ Agenten-Rufzeichen geändert zu: ${cleaned}`, 'info');
+      });
+    }
+
+    const resetStatsBtn = document.getElementById('btn-reset-stats');
+    if (resetStatsBtn) {
+      resetStatsBtn.addEventListener('click', () => {
+        CS.audio.playUISound('click');
+        if (!this._confirmResetStats) {
+          this._confirmResetStats = true;
+          resetStatsBtn.textContent = '⚠️ SICHER? NOCHMAL KLICKEN';
+          clearTimeout(this._resetConfirmTimer);
+          this._resetConfirmTimer = setTimeout(() => {
+            this._confirmResetStats = false;
+            resetStatsBtn.textContent = '🔄 Statistiken zurücksetzen';
+          }, 3500);
+          return;
+        }
+        this._confirmResetStats = false;
+        resetStatsBtn.textContent = '🔄 Statistiken zurücksetzen';
+        this.profile.stats = this.getDefaultStats();
+        this.profile.totalKills = 0;
+        this.saveProfile();
+        this.renderStatsTab();
+        this.showToast('🔄 Alle Kampfstatistiken wurden auf 0 zurückgesetzt.', 'info');
+      });
+    }
 
     // Toggle 3D showcase mode (Agent vs Weapon Zoom)
     const toggleViewBtn = document.getElementById('btn-toggle-3d-view');
@@ -295,7 +461,8 @@ class UIManager {
         const selectedMode = document.querySelector('.mode-card.selected')?.dataset.mode || 'bomb';
         const selectedMap = document.querySelector('.map-card.selected')?.dataset.map || 'de_sandstorm';
         const selectedTeam = document.querySelector('.team-pick-btn.selected')?.dataset.team || 'CT';
-        CS.game.startMatch(selectedMode, selectedMap, selectedTeam);
+        const selectedDiff = this.profile.settings.difficulty || 'hard';
+        CS.game.startMatch(selectedMode, selectedMap, selectedTeam, selectedDiff);
       });
     }
 
@@ -369,7 +536,7 @@ class UIManager {
         <div class="mode-card ${idx === 0 ? 'selected' : ''}" data-mode="${m.id}">
           <div class="mode-icon">${m.icon}</div>
           <div class="mode-info">
-            <div class="mode-title">${m.name}</div>
+            <div class="mode-title" style="display:flex;justify-content:space-between;align-items:center;"><span>${m.name}</span><span class="diff-cr-pill">🪙 ${m.creditMult || 1}x CR</span></div>
             <div class="mode-desc">${m.desc}</div>
           </div>
         </div>
@@ -798,6 +965,7 @@ class UIManager {
     }
 
     this.profile.credits -= caseObj.price;
+    this.recordMedal('casesOpened');
     this.saveProfile();
     this.isUnboxing = true;
     CS.audio.playUISound('buy');
@@ -1134,6 +1302,245 @@ class UIManager {
     this.showToast(`${meta.name} ausgerüstet!`, 'gold');
   }
 
+  // ==========================================================================
+  // 5. CAREER & COMBAT STATISTICS TAB ("STATISTIKEN")
+  // ==========================================================================
+  renderStatsTab() {
+    const st = this.ensureStats();
+    const rankInfo = this.getRankInfo();
+
+    // Update top header profile row
+    const rankIconEl = document.getElementById('stats-rank-icon');
+    const rankSubEl = document.getElementById('stats-rank-subtitle');
+    const nameInput = document.getElementById('stats-player-name-input');
+    const favPillEl = document.getElementById('stats-fav-weapon-pill');
+
+    if (rankIconEl) rankIconEl.textContent = rankInfo.current.icon;
+    if (rankSubEl) {
+      rankSubEl.innerHTML = `${rankInfo.current.name} &bull; <strong>${this.profile.xp.toLocaleString('de-DE')} XP</strong> (${rankInfo.progress}% bis ${rankInfo.next.name})`;
+    }
+    if (nameInput && document.activeElement !== nameInput) {
+      nameInput.value = this.profile.playerName || 'StrikeCommander';
+    }
+
+    // Core KPI calculations
+    const kills = st.kills || 0;
+    const deaths = st.deaths || 0;
+    const kd = deaths > 0 ? (kills / deaths) : kills;
+    const kdFormatted = kd.toFixed(2);
+    const kdColor = kd >= 1.5 ? '#4ade80' : (kd >= 1.0 ? '#38bdf8' : '#fbbf24');
+    const kdPct = Math.min(100, Math.round((kd / 2.5) * 100));
+
+    const hsKills = st.headshotKills || 0;
+    const hsRate = kills > 0 ? Math.round((hsKills / kills) * 100) : 0;
+
+    const roundsPlayed = st.roundsPlayed || 0;
+    const roundsWon = st.roundsWon || 0;
+    const roundsLost = st.roundsLost || 0;
+    const winRate = roundsPlayed > 0 ? Math.round((roundsWon / roundsPlayed) * 100) : 0;
+
+    const shotsFired = st.shotsFired || 0;
+    const shotsHit = Math.min(shotsFired, st.shotsHit || 0);
+    const accuracy = shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 100) : 0;
+
+    const totalDmg = st.totalDamage || 0;
+    const adr = roundsPlayed > 0 ? Math.round(totalDmg / roundsPlayed) : totalDmg;
+
+    // 1. Render Top 6 KPI Cards
+    const kpiGrid = document.getElementById('stats-kpi-grid');
+    if (kpiGrid) {
+      const kpis = [
+        {
+          label: '⚔️ K/D-VERHÄLTNIS',
+          val: kdFormatted,
+          sub: `${kills.toLocaleString('de-DE')} Kills / ${deaths.toLocaleString('de-DE')} Tode`,
+          pct: kdPct,
+          accent: kdColor
+        },
+        {
+          label: '💀 GESAMTE KILLS & TODE',
+          val: `${kills.toLocaleString('de-DE')} / ${deaths.toLocaleString('de-DE')}`,
+          sub: `Beste Serie: ${st.bestKillStreak || 0} Kills in 1 Runde`,
+          pct: Math.min(100, Math.round((kills / Math.max(1, kills + deaths)) * 100)),
+          accent: '#38bdf8'
+        },
+        {
+          label: '🎯 KOPFSCHUSS-QUOTE',
+          val: `${hsRate}%`,
+          sub: `${hsKills.toLocaleString('de-DE')} Kopfschuss-Kills`,
+          pct: hsRate,
+          accent: '#f59e0b'
+        },
+        {
+          label: '🏆 RUNDEN-BILANZ (SIEGRATE)',
+          val: `${winRate}%`,
+          sub: `${roundsPlayed} Gespielt • ${roundsWon} S / ${roundsLost} N`,
+          pct: winRate,
+          accent: '#4ade80'
+        },
+        {
+          label: '🔫 TREFFGENAUIGKEIT',
+          val: `${accuracy}%`,
+          sub: `${shotsHit.toLocaleString('de-DE')} Treffer / ${shotsFired.toLocaleString('de-DE')} Schüsse`,
+          pct: accuracy,
+          accent: '#a855f7'
+        },
+        {
+          label: '💥 SCHADEN & Ø ADR',
+          val: `${adr.toLocaleString('de-DE')} ADR`,
+          sub: `${totalDmg.toLocaleString('de-DE')} Gesamtschaden`,
+          pct: Math.min(100, Math.round((adr / 300) * 100)),
+          accent: '#ef4444'
+        }
+      ];
+
+      kpiGrid.innerHTML = kpis.map(k => `
+        <div class="stats-kpi-card" style="--kpi-accent:${k.accent}">
+          <div class="stats-kpi-label">${k.label}</div>
+          <div class="stats-kpi-val" style="color:${k.accent}">${k.val}</div>
+          <div class="stats-kpi-sub">${k.sub}</div>
+          <div class="stats-kpi-bar">
+            <div class="stats-kpi-bar-fill" style="width:${k.pct}%"></div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 2. Render Weapon Arsenal Breakdown (Kills, Headshots & Accuracy per Weapon)
+    const weaponIds = [
+      'ak47', 'm4a1s', 'm4a4', 'awp', 'deagle', 'usps', 'glock',
+      'mp9', 'ump45', 'famas', 'aug', 'ssg08', 'p250', 'nova', 'xm1014',
+      'knife', 'he', 'molotov'
+    ];
+
+    const weaponRows = weaponIds.map(wId => {
+      const wObj = CS.WEAPONS[wId] || { id: wId, name: wId.toUpperCase() };
+      const wKills = st.weaponKills?.[wId] || 0;
+      const wHs = st.weaponHeadshots?.[wId] || 0;
+      const wShots = st.weaponShots?.[wId] || 0;
+      const wHits = Math.min(wShots, st.weaponHits?.[wId] || 0);
+      const wAcc = wShots > 0 ? Math.round((wHits / wShots) * 100) : 0;
+      const wHsPct = wKills > 0 ? Math.round((wHs / wKills) * 100) : 0;
+      return { wId, wObj, wKills, wHs, wShots, wHits, wAcc, wHsPct };
+    }).sort((a, b) => (b.wKills - a.wKills) || (b.wShots - a.wShots));
+
+    const maxWeaponKills = Math.max(1, weaponRows[0]?.wKills || 1);
+    const favWeapon = weaponRows[0] && weaponRows[0].wKills > 0 ? weaponRows[0] : null;
+    if (favPillEl) {
+      favPillEl.textContent = favWeapon
+        ? `★ Lieblingswaffe: ${favWeapon.wObj.name} (${favWeapon.wKills} Kills)`
+        : '★ Lieblingswaffe: Noch keine Kills';
+    }
+
+    const wepListEl = document.getElementById('stats-weapons-list');
+    if (wepListEl) {
+      wepListEl.innerHTML = weaponRows.map((row, idx) => {
+        const isTop = idx === 0 && row.wKills > 0;
+        const barPct = row.wKills > 0 ? Math.max(6, Math.round((row.wKills / maxWeaponKills) * 100)) : 0;
+        const skinId = this.profile.weaponSkins?.[row.wId] || 'default';
+        const skinName = (!row.wObj.isGrenade && skinId !== 'default') ? ` | ${CS.SKINS[skinId]?.name || ''}` : '';
+
+        let thumbUrl = '';
+        if (row.wId === 'knife') {
+          const kId = this.profile.equippedKnife || 'knife_default';
+          thumbUrl = CS.textures.getCosmeticPreviewDataURL('knife', kId, CS.KNIFE_MODELS[kId]?.previewSkin || 'default');
+        } else if (!row.wObj.isGrenade) {
+          thumbUrl = CS.textures.getCosmeticPreviewDataURL('skin', skinId, row.wId);
+        } else {
+          thumbUrl = CS.textures.getCosmeticPreviewDataURL('skin', 'crimson_web', 'ak47');
+        }
+
+        const displayName = row.wId === 'knife'
+          ? (CS.KNIFE_MODELS[this.profile.equippedKnife]?.name || 'Kampfmesser')
+          : row.wObj.name;
+
+        const subDetails = row.wObj.isGrenade
+          ? `Explosiv- / Brandschaden`
+          : `🎯 ${row.wHs} Kopfschüsse (${row.wHsPct}%) &bull; ${row.wShots} Schüsse (${row.wAcc}% Präzision)`;
+
+        return `
+          <div class="stats-weapon-row ${isTop ? 'top-weapon' : ''}">
+            <img class="stats-wep-thumb" src="${thumbUrl}" alt="${displayName}" />
+            <div>
+              <div class="stats-wep-title">
+                <span>${displayName}<span style="color:#38bdf8;font-size:11px;">${skinName}</span></span>
+                ${isTop ? '<span style="background:#fbbf24;color:#0f172a;font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:900;">★ NR. 1</span>' : ''}
+              </div>
+              <div class="stats-wep-sub">${subDetails}</div>
+            </div>
+            <div class="stats-wep-bar-wrap">
+              <div class="stats-wep-bar-track">
+                <div class="stats-wep-bar-fill" style="width:${barPct}%"></div>
+              </div>
+            </div>
+            <div class="stats-wep-kills">${row.wKills.toLocaleString('de-DE')} Kills</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 3. Render Combat Medals & Bomb Operations Grid
+    const medalsGrid = document.getElementById('stats-medals-grid');
+    if (medalsGrid) {
+      const medals = [
+        { icon: '👑', name: 'ACEs (5x Kills)', val: st.aces || 0 },
+        { icon: '🏆', name: '1vX Clutches', val: st.clutchesWon || 0 },
+        { icon: '💥', name: 'Ultra Kills (4x)', val: st.ultraKills || 0 },
+        { icon: '🔥', name: 'Triple Kills (3x)', val: st.tripleKills || 0 },
+        { icon: '⚡', name: 'Double Kills (2x)', val: st.doubleKills || 0 },
+        { icon: '🩸', name: 'First Bloods', val: st.firstBloods || 0 },
+        { icon: '💣', name: 'C4 Platziert', val: st.bombsPlanted || 0 },
+        { icon: '✂️', name: 'C4 Entschärft', val: st.bombsDefused || 0 },
+        { icon: '🎖️', name: 'Beste Kill-Serie', val: st.bestKillStreak || 0 }
+      ];
+
+      medalsGrid.innerHTML = medals.map(m => `
+        <div class="stats-medal-card">
+          <div class="stats-medal-icon">${m.icon}</div>
+          <div>
+            <div class="stats-medal-val">${m.val.toLocaleString('de-DE')}</div>
+            <div class="stats-medal-name">${m.name}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 4. Render Map & Economy Career Extras
+    const extraEl = document.getElementById('stats-career-extra');
+    if (extraEl) {
+      const totalCosmeticsOwned =
+        (this.profile.ownedSkins?.length || 0) +
+        (this.profile.ownedKnives?.length || 0) +
+        (this.profile.ownedGloves?.length || 0) +
+        (this.profile.ownedOutfits?.length || 0);
+      const totalCosmeticsMax =
+        Object.keys(CS.SKINS || {}).length +
+        Object.keys(CS.KNIFE_MODELS || {}).length +
+        Object.keys(CS.GLOVES || {}).length +
+        Object.keys(CS.AGENT_OUTFITS || {}).length;
+
+      const mapItems = Object.values(CS.MAPS || {}).map(mp => ({
+        label: `🗺️ ${mp.name}`,
+        val: `${(st.mapRounds?.[mp.id] || 0)} Runden`
+      }));
+
+      const careerItems = [
+        ...mapItems,
+        { label: '🪙 Verdiente Credits (Gesamt)', val: `${(st.totalCreditsEarned || 0).toLocaleString('de-DE')} CR` },
+        { label: '📦 Geöffnete Waffenkisten', val: `${(st.casesOpened || 0).toLocaleString('de-DE')} Kisten` },
+        { label: '🎨 Sammlung freigeschaltet', val: `${totalCosmeticsOwned} / ${totalCosmeticsMax} Items` },
+        { label: '⭐ Karriere-Erfahrung', val: `${this.profile.xp.toLocaleString('de-DE')} XP` }
+      ];
+
+      extraEl.innerHTML = careerItems.map(it => `
+        <div class="stats-extra-row">
+          <span class="stats-extra-label">${it.label}</span>
+          <span class="stats-extra-val">${it.val}</span>
+        </div>
+      `).join('');
+    }
+  }
+
   applySettingsToUI() {
     const s = this.profile.settings;
     if (document.getElementById('setting-sens')) {
@@ -1152,6 +1559,73 @@ class UIManager {
       document.getElementById('setting-bots').value = s.botCount;
       const t = s.botCount + 1;
       document.getElementById('setting-bots-val').textContent = `${t}v${t}`;
+    }
+    this.syncDifficultyControls(s.difficulty || 'hard');
+  }
+
+  renderDifficultySelectors() {
+    const activeDiff = this.profile.settings.difficulty || 'hard';
+    const diffs = Object.values(CS.DIFFICULTIES || {});
+    if (!diffs.length) return;
+
+    const buildDiffButtonsHTML = (currId) => diffs.map(d => `
+      <button type="button" class="diff-card-btn ${d.id === currId ? 'selected' : ''}" data-diff="${d.id}" style="--diff-color:${d.color}">
+        <div class="diff-card-top">
+          <span class="diff-icon-name">${d.icon} ${d.name}</span>
+          <span class="diff-cr-pill">🪙 ${d.creditMult}x CR</span>
+        </div>
+        <div class="diff-card-sub">${d.tactics}</div>
+      </button>
+    `).join('');
+
+    ['difficulty-list', 'settings-difficulty-bar', 'pause-difficulty-bar'].forEach(containerId => {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.innerHTML = buildDiffButtonsHTML(activeDiff);
+      el.querySelectorAll('.diff-card-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const chosen = btn.dataset.diff;
+          CS.audio.playUISound('click');
+          this.profile.settings.difficulty = chosen;
+          this.saveProfile();
+          this.syncDifficultyControls(chosen);
+          if (CS.game && CS.game.running) {
+            CS.game.setDifficulty(chosen);
+          }
+        });
+      });
+    });
+
+    this.updateDifficultyInfoBox(activeDiff);
+  }
+
+  syncDifficultyControls(diffId) {
+    ['difficulty-list', 'settings-difficulty-bar', 'pause-difficulty-bar'].forEach(containerId => {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.querySelectorAll('.diff-card-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.diff === diffId);
+      });
+    });
+    this.updateDifficultyInfoBox(diffId);
+  }
+
+  updateDifficultyInfoBox(diffId) {
+    const infoEl = document.getElementById('difficulty-tactics-info');
+    if (!infoEl || !CS.DIFFICULTIES) return;
+    const d = CS.DIFFICULTIES[diffId] || CS.DIFFICULTIES.hard;
+    infoEl.style.borderColor = d.color;
+    infoEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <strong style="color:${d.color};font-size:11.5px;">${d.icon} ${d.label}</strong>
+        <span style="color:#fbbf24;font-weight:900;font-size:11px;">🪙 ${d.badge} &bull; ⭐ ${d.xpMult}x XP</span>
+      </div>
+      <div style="font-size:10.5px;color:#cbd5e1;line-height:1.3;">${d.desc}</div>
+    `;
+  }
+
+  _unusedApplyEnd() {
+    if (false) {
     }
   }
 

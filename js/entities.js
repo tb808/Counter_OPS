@@ -236,20 +236,42 @@ class TacticalBot {
     this.reactionTimer = 0;
     this.strafeDir = 1;
     this.strafeTimer = 0;
+    this.isCrouching = false;
+    this.crouchTimer = 0;
+    this.alertTimer = 0;
+    this.alertTargetPos = null;
+    this.grenadesLeft = 0;
+    this.grenadeCooldown = 0;
     this.flashedTimer = 0;
     this.radarVisibleTimer = 0;
     this.plantProgress = 0;
     this.defuseProgress = 0;
+    this.tacticalOrder = null;
 
     this.mesh = null;
     this.buildMesh();
+  }
+
+  getDifficultyConfig(game = null) {
+    const g = game || CS.game;
+    const diffId = (g && g.currentDifficulty) || (CS.ui && CS.ui.profile?.settings?.difficulty) || 'hard';
+    // Enemy bots use the selected difficulty; allied bots stay balanced so they support without stealing all kills on Nightmare
+    if (g && g.player && this.team === g.player.team) {
+      if (diffId === 'easy') return CS.DIFFICULTIES.easy;
+      return CS.DIFFICULTIES.medium;
+    }
+    return CS.DIFFICULTIES[diffId] || CS.DIFFICULTIES.hard;
   }
 
   buildMesh() {
     if (this.mesh) {
       this.scene.remove(this.mesh);
     }
-    const outfitId = this.team === 'CT' ? 'sas_navy' : 'phoenix_crimson';
+    const diffCfg = this.getDifficultyConfig();
+    let outfitId = this.team === 'CT' ? 'sas_navy' : 'phoenix_crimson';
+    if (diffCfg.id === 'nightmare' && (!CS.game || !CS.game.player || this.team !== CS.game.player.team)) {
+      outfitId = this.team === 'CT' ? 'cyber_spectre' : 'gold_commander';
+    }
     this.mesh = CS.buildAgentModel(this.team, outfitId, this.weaponId, this.skinId);
     // Tag all hitboxes with a reference to this bot
     for (const hb of this.mesh.userData.hitboxes) {
@@ -264,21 +286,36 @@ class TacticalBot {
     this.weaponId = wId;
     if (skinId) this.skinId = skinId;
     else {
+      const diffCfg = this.getDifficultyConfig();
       const skinKeys = Object.keys(CS.SKINS);
-      this.skinId = skinKeys[Math.floor(Math.random() * Math.min(8, skinKeys.length))];
+      if (diffCfg.id === 'nightmare') {
+        const eliteSkins = ['asiimov', 'fade', 'hyper_beast', 'neon_rider', 'dragon_lore', 'emerald_doppler', 'gold_arabesque', 'printstream'];
+        this.skinId = eliteSkins[Math.floor(Math.random() * eliteSkins.length)];
+      } else {
+        this.skinId = skinKeys[Math.floor(Math.random() * Math.min(8, skinKeys.length))];
+      }
     }
     this.ammo = CS.WEAPONS[wId].magSize || 30;
     this.buildMesh();
   }
 
   spawnAt(spawnPt) {
+    const diffCfg = this.getDifficultyConfig();
     this.dead = false;
     this.health = 100;
-    this.armor = 100;
-    this.hasHelmet = true;
+    this.armor = diffCfg.startArmor ?? 100;
+    this.hasHelmet = diffCfg.hasHelmet ?? true;
+    this.hasDefuseKit = this.team === 'CT' && (diffCfg.hasDefuseKit ?? true);
+    this.grenadesLeft = diffCfg.maxGrenades ?? 0;
+    this.grenadeCooldown = 2.5 + Math.random() * 2.5;
+    this.isCrouching = false;
+    this.crouchTimer = 0;
+    this.alertTimer = 0;
+    this.alertTargetPos = null;
     this.flashedTimer = 0;
     this.plantProgress = 0;
     this.defuseProgress = 0;
+    this.tacticalOrder = null;
     this.deathTimer = 0;
     this.deathVelocity.set(0, 0, 0);
     this.position.set(spawnPt.x + (Math.random() - 0.5) * 1.6, spawnPt.y || 0, spawnPt.z + (Math.random() - 0.5) * 1.6);
@@ -288,7 +325,10 @@ class TacticalBot {
       this.mesh.rotation.set(0, this.yaw, 0);
       this.mesh.position.copy(this.position);
       const ud = this.mesh.userData;
-      if (ud.upperBody) ud.upperBody.rotation.set(0, 0, 0);
+      if (ud.upperBody) {
+        ud.upperBody.position.y = 0.86;
+        ud.upperBody.rotation.set(0, 0, 0);
+      }
       if (ud.headGroup) ud.headGroup.rotation.set(0, 0, 0);
       if (ud.leftLegPivot) ud.leftLegPivot.rotation.set(0, 0, 0);
       if (ud.rightLegPivot) ud.rightLegPivot.rotation.set(0, 0, 0);
@@ -307,6 +347,54 @@ class TacticalBot {
       this.equipWeapon(wId);
       return;
     }
+
+    const diffCfg = this.getDifficultyConfig();
+    const tier = diffCfg.weaponTier || 'hard';
+
+    if (tier === 'easy') {
+      // Easy bots mostly use pistols, SMGs or shotguns, rarely a light rifle
+      if (modeId === 'tdm' || this.money >= 2400) {
+        const lightPool = ['mp9', 'ump45', 'nova', 'p250', 'famas'];
+        this.equipWeapon(lightPool[Math.floor(Math.random() * lightPool.length)]);
+        if (modeId === 'bomb') this.money = Math.max(0, this.money - 1400);
+      } else {
+        const pistols = this.team === 'CT' ? ['usps', 'p250'] : ['glock', 'p250'];
+        this.equipWeapon(pistols[Math.floor(Math.random() * pistols.length)]);
+      }
+      return;
+    }
+
+    if (tier === 'medium') {
+      if (modeId === 'tdm' || this.money >= 3100) {
+        const medPool = this.team === 'CT' ? ['famas', 'm4a1s', 'm4a4', 'mp9', 'ump45'] : ['famas', 'ak47', 'ump45', 'mp9'];
+        this.equipWeapon(medPool[Math.floor(Math.random() * medPool.length)]);
+        if (modeId === 'bomb') this.money = Math.max(0, this.money - 2700);
+      } else if (this.money >= 1400) {
+        const smgs = ['mp9', 'ump45', 'nova', 'p250'];
+        this.equipWeapon(smgs[Math.floor(Math.random() * smgs.length)]);
+        if (modeId === 'bomb') this.money = Math.max(0, this.money - 1250);
+      } else {
+        const pistols = this.team === 'CT' ? ['usps', 'p250'] : ['glock', 'p250'];
+        this.equipWeapon(pistols[Math.floor(Math.random() * pistols.length)]);
+      }
+      return;
+    }
+
+    if (tier === 'nightmare') {
+      // Nightmare bots prioritize deadly meta rifles, AWP & Deagle
+      if (modeId === 'tdm' || this.money >= 2700) {
+        const elitePool = this.team === 'CT' ? ['m4a1s', 'm4a4', 'aug', 'awp', 'ak47'] : ['ak47', 'ak47', 'aug', 'awp'];
+        this.equipWeapon(elitePool[Math.floor(Math.random() * elitePool.length)]);
+        if (modeId === 'bomb') this.money = Math.max(0, this.money - 2700);
+      } else {
+        const ecoElite = ['deagle', 'mp9', 'ump45', 'ssg08'];
+        this.equipWeapon(ecoElite[Math.floor(Math.random() * ecoElite.length)]);
+        if (modeId === 'bomb') this.money = Math.max(0, this.money - 900);
+      }
+      return;
+    }
+
+    // Default 'hard' behavior (exact original logic)
     if (modeId === 'tdm' || this.money >= 3100) {
       const rifles = this.team === 'CT' ? ['m4a4', 'm4a1s', 'aug', 'awp'] : ['ak47', 'famas', 'ssg08', 'awp'];
       const pick = rifles[Math.floor(Math.random() * rifles.length)];
@@ -404,6 +492,46 @@ class TacticalBot {
       return;
     }
 
+    // 1c. Follow Player Squad Radio Order ([Z] Rush Site, [X] Follow Player, [V] Hold Position)
+    if (this.tacticalOrder && this.tacticalOrder.timer > 0) {
+      if (this.tacticalOrder.type === 'rush') {
+        const siteKey = this.tacticalOrder.siteKey || 'A';
+        const site = CS.mapBuilder.bombsites[siteKey];
+        if (site) {
+          this.assignedLane = siteKey;
+          const dToSite = Math.hypot(site.x - this.position.x, site.z - this.position.z);
+          const siteNode = nodes.find(n => n.isSite === siteKey) || this.findNearestNavNode(site.x, site.z, nodes);
+          if (dToSite < 7.0 || (curNode && siteNode && curNode.id === siteNode.id)) {
+            this.targetWaypoint = { x: site.x + (Math.random() - 0.5) * 2.5, z: site.z + (Math.random() - 0.5) * 2.5 };
+            return;
+          }
+          const hop = this.findNextHopBFS(curNode, siteNode, byId) || siteNode;
+          this.prevNavNode = curNode ? curNode.id : null;
+          this.currentNavNode = hop.id;
+          this.targetWaypoint = { x: hop.x + (Math.random() - 0.5) * 1.4, z: hop.z + (Math.random() - 0.5) * 1.4 };
+          return;
+        }
+      } else if (this.tacticalOrder.type === 'follow' && CS.game && CS.game.player && !CS.game.player.dead) {
+        const pPos = CS.game.player.position;
+        const offX = this.tacticalOrder.offsetX || 0;
+        const offZ = this.tacticalOrder.offsetZ || 0;
+        const dToPlayer = Math.hypot(pPos.x - this.position.x, pPos.z - this.position.z);
+        const goal = this.findNearestNavNode(pPos.x, pPos.z, nodes);
+        if (dToPlayer < 8.5 || (curNode && goal && curNode.id === goal.id)) {
+          this.targetWaypoint = { x: pPos.x + offX, z: pPos.z + offZ };
+          return;
+        }
+        const hop = this.findNextHopBFS(curNode, goal, byId) || goal;
+        this.prevNavNode = curNode ? curNode.id : null;
+        this.currentNavNode = hop.id;
+        this.targetWaypoint = { x: hop.x + (Math.random() - 0.5) * 1.2, z: hop.z + (Math.random() - 0.5) * 1.2 };
+        return;
+      } else if (this.tacticalOrder.type === 'hold' && this.tacticalOrder.pos) {
+        this.targetWaypoint = { x: this.tacticalOrder.pos.x, z: this.tacticalOrder.pos.z };
+        return;
+      }
+    }
+
     // 2. If T with C4, navigate along connected graph to Bombsite A or B!
     if (this.team === 'T' && this.hasC4) {
       const siteKey = this.assignedLane === 'B' ? 'B' : 'A';
@@ -457,6 +585,7 @@ class TacticalBot {
       this.health = 0;
       this.dead = true;
       this.deaths++;
+      this.isCrouching = false;
       this.plantProgress = 0;
       this.defuseProgress = 0;
       this.deathTimer = 0;
@@ -475,7 +604,66 @@ class TacticalBot {
       }
       return true; // Killed!
     }
+
+    // Tactical Hit-Reflex & Team Callout when surviving a shot
+    if (attacker && attacker.position) {
+      const diffCfg = this.getDifficultyConfig();
+      this.alertTimer = 5.5;
+      this.alertTargetPos = attacker.position.clone();
+
+      // Evasive reflex on Hard & Nightmare
+      if (diffCfg.id === 'nightmare') {
+        this.strafeDir *= -1;
+        this.strafeTimer = 0.35;
+        this.isCrouching = true;
+        this.crouchTimer = 0.85;
+      } else if (diffCfg.id === 'hard' && Math.random() < 0.45) {
+        this.strafeDir *= -1;
+      }
+
+      // Alert nearby teammates (Callout)
+      if (CS.game && CS.game.bots && (diffCfg.calloutRange || 0) > 0) {
+        for (const ally of CS.game.bots) {
+          if (!ally.dead && ally !== this && ally.team === this.team) {
+            if (ally.position.distanceTo(this.position) <= diffCfg.calloutRange) {
+              ally.alertTimer = Math.max(ally.alertTimer, 4.0);
+              ally.alertTargetPos = attacker.position.clone();
+            }
+          }
+        }
+      }
+    }
     return false;
+  }
+
+  tryThrowTacticalGrenade(target, dist, diffCfg, game) {
+    if (this.grenadesLeft <= 0 || this.grenadeCooldown > 0) return;
+    if (dist < 11 || dist > 32) return;
+    const chance = (diffCfg.grenadeChance || 0) * 0.025;
+    if (Math.random() > chance) return;
+
+    this.grenadesLeft--;
+    this.grenadeCooldown = 7.5 + Math.random() * 4.0;
+
+    const gTypes = diffCfg.id === 'nightmare' ? ['flash', 'he', 'he', 'smoke'] : ['flash', 'he'];
+    const gType = gTypes[Math.floor(Math.random() * gTypes.length)];
+    const mesh = CS.weaponBuilder.buildGrenadeMesh(gType);
+    mesh.scale.set(1.6, 1.6, 1.6);
+
+    const startPos = new THREE.Vector3(this.position.x, this.position.y + 1.5, this.position.z);
+    const toTarget = new THREE.Vector3(target.pos.x - startPos.x, 2.2, target.pos.z - startPos.z).normalize();
+    mesh.position.copy(startPos).addScaledVector(toTarget, 0.6);
+    this.scene.add(mesh);
+
+    const throwSpeed = Math.min(23, Math.max(12, dist * 0.82));
+    game.activeGrenades.push({
+      type: gType,
+      mesh,
+      position: mesh.position,
+      velocity: toTarget.multiplyScalar(throwSpeed),
+      fuseTimer: 1.65,
+      owner: this
+    });
   }
 
   update(dt, game) {
@@ -499,6 +687,7 @@ class TacticalBot {
           ud.rightLegPivot.rotation.x = ease * 0.42 * this.deathFallDir;
         }
         if (ud.upperBody) {
+          ud.upperBody.position.y = 0.86;
           ud.upperBody.rotation.x = ease * 0.35 * -this.deathFallDir;
           ud.upperBody.rotation.z = ease * (this.deathYawSpin * 0.25);
         }
@@ -530,9 +719,21 @@ class TacticalBot {
       return;
     }
 
+    const diffCfg = this.getDifficultyConfig(game);
+
     if (this.radarVisibleTimer > 0) this.radarVisibleTimer -= dt;
     if (this.flashedTimer > 0) this.flashedTimer -= dt;
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
+    if (this.alertTimer > 0) this.alertTimer -= dt;
+    if (this.grenadeCooldown > 0) this.grenadeCooldown -= dt;
+    if (this.tacticalOrder) {
+      this.tacticalOrder.timer -= dt;
+      if (this.tacticalOrder.timer <= 0) this.tacticalOrder = null;
+    }
+    if (this.crouchTimer > 0) {
+      this.crouchTimer -= dt;
+      if (this.crouchTimer <= 0) this.isCrouching = false;
+    }
 
     // Freeze during buy phase in Bomb Defusal
     if (game.roundPhase === 'buy') {
@@ -540,9 +741,9 @@ class TacticalBot {
       return;
     }
 
-    // 1. Acquire nearest visible enemy (Player or Enemy Bot)
+    // 1. Acquire nearest visible enemy (Player or Enemy Bot) with difficulty sight range & FOV cone
     let bestTarget = null;
-    let bestDist = 115;
+    let bestDist = diffCfg.sightRange || 115;
 
     const candidates = [];
     // Never target or shoot the player while their Spawn Shield is active!
@@ -555,49 +756,108 @@ class TacticalBot {
       }
     }
 
-    const eyePos = new THREE.Vector3(this.position.x, this.position.y + 1.55, this.position.z);
+    const eyePos = new THREE.Vector3(this.position.x, this.position.y + (this.isCrouching ? 1.25 : 1.55), this.position.z);
+    const forwardX = -Math.sin(this.yaw);
+    const forwardZ = -Math.cos(this.yaw);
+    const minFovCos = this.alertTimer > 0 ? -1.0 : (diffCfg.fovCos ?? -1.0);
 
     if (this.flashedTimer <= 0.4) {
       for (const cand of candidates) {
         const targetEye = new THREE.Vector3(cand.pos.x, cand.pos.y + 1.35, cand.pos.z);
         const dist = eyePos.distanceTo(targetEye);
-        if (dist < bestDist && game.hasLineOfSight(eyePos, targetEye)) {
-          bestDist = dist;
-          bestTarget = cand;
+        if (dist < bestDist) {
+          // Check Field of View cone on Easy/Medium unless very close or alerted
+          if (minFovCos > -0.99 && dist > 9.0) {
+            const toX = (cand.pos.x - this.position.x) / Math.max(0.001, dist);
+            const toZ = (cand.pos.z - this.position.z) / Math.max(0.001, dist);
+            const dot = forwardX * toX + forwardZ * toZ;
+            if (dot < minFovCos) continue;
+          }
+          if (game.hasLineOfSight(eyePos, targetEye)) {
+            bestDist = dist;
+            bestTarget = cand;
+          }
         }
       }
     }
 
-    // 2. Combat Aiming & Firing
+    // 2. Combat Aiming, Tactical Movement & Firing
     if (bestTarget) {
       this.radarVisibleTimer = 2.5;
+      this.alertTimer = 4.0;
+      this.alertTargetPos = bestTarget.pos.clone();
+
+      // Share target callout with nearby teammates on Medium/Hard/Nightmare
+      if ((diffCfg.calloutRange || 0) > 0 && bestTarget.isPlayer) {
+        for (const ally of game.bots) {
+          if (!ally.dead && ally !== this && ally.team === this.team) {
+            if (ally.position.distanceTo(this.position) <= diffCfg.calloutRange) {
+              ally.alertTimer = Math.max(ally.alertTimer, 3.2);
+              ally.alertTargetPos = bestTarget.pos.clone();
+            }
+          }
+        }
+      }
+
       const dx = bestTarget.pos.x - this.position.x;
       const dz = bestTarget.pos.z - this.position.z;
       const desiredYaw = Math.atan2(-dx, -dz);
-      // Smooth turn toward enemy
+      // Smooth turn toward enemy scaled by difficulty aimTurnSpeed
       let diff = desiredYaw - this.yaw;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
-      this.yaw += diff * Math.min(1, dt * 9.5);
+      this.yaw += diff * Math.min(1, dt * (diffCfg.aimTurnSpeed || 9.5));
 
-      // Tactical strafing while in combat
+      // Tactical strafing & crouch-peeking while in combat
       this.strafeTimer -= dt;
       if (this.strafeTimer <= 0) {
         this.strafeDir = Math.random() > 0.5 ? 1 : -1;
-        this.strafeTimer = 0.6 + Math.random() * 0.8;
+        const sMin = diffCfg.strafeMin ?? 0.6;
+        const sMax = diffCfg.strafeMax ?? 1.4;
+        this.strafeTimer = sMin + Math.random() * (sMax - sMin);
+        if (Math.random() < (diffCfg.crouchChance || 0)) {
+          this.isCrouching = true;
+          this.crouchTimer = 0.45 + Math.random() * 0.55;
+        } else {
+          this.isCrouching = false;
+        }
       }
 
-      const rightX = Math.cos(this.yaw) * this.strafeDir;
-      const rightZ = -Math.sin(this.yaw) * this.strafeDir;
-      this.moveWithCollision(rightX * 2.6 * dt, rightZ * 2.6 * dt);
+      const sSpeed = (diffCfg.strafeSpeed ?? 2.6) * (this.isCrouching ? 0.65 : 1.0);
+      let moveX = Math.cos(this.yaw) * this.strafeDir * sSpeed;
+      let moveZ = -Math.sin(this.yaw) * this.strafeDir * sSpeed;
 
-      // Fire weapon if aiming close enough
+      // Nightmare / Hard spacing tactics: push with SMGs/Shotguns or back off when low HP
+      if (diffCfg.id === 'nightmare' || diffCfg.id === 'hard') {
+        const w = CS.WEAPONS[this.weaponId];
+        if (this.health < 35 && bestDist < 22) {
+          // Tactical retreat while firing
+          moveX += Math.sin(this.yaw) * 2.2;
+          moveZ += Math.cos(this.yaw) * 2.2;
+        } else if (w && w.category === 'smgs' && bestDist > 15) {
+          // Aggressive close-quarters push
+          moveX += -Math.sin(this.yaw) * 2.4;
+          moveZ += -Math.cos(this.yaw) * 2.4;
+        }
+      }
+
+      this.moveWithCollision(moveX * dt, moveZ * dt);
+
+      // Tactical Grenade usage (Medium / Hard / Nightmare)
+      if (bestTarget.isPlayer && (diffCfg.grenadeChance || 0) > 0) {
+        this.tryThrowTacticalGrenade(bestTarget, bestDist, diffCfg, game);
+      }
+
+      // Fire weapon if aiming close enough and reaction time reached
       this.reactionTimer += dt;
-      if (Math.abs(diff) < 0.32 && this.reactionTimer > 0.24 && this.fireCooldown <= 0) {
-        this.fireAtTarget(bestTarget, bestDist, game);
+      const reqReact = diffCfg.reactionTime ?? 0.24;
+      const maxAngle = diffCfg.fireAngleMax ?? 0.32;
+      if (Math.abs(diff) < maxAngle && this.reactionTimer > reqReact && this.fireCooldown <= 0) {
+        this.fireAtTarget(bestTarget, bestDist, game, diffCfg);
       }
     } else {
       this.reactionTimer = Math.max(0, this.reactionTimer - dt * 1.5);
+      this.isCrouching = false;
 
       // 3. Bomb Planting / Defusing Logic for Bots
       if (game.currentMode === 'bomb') {
@@ -606,12 +866,12 @@ class TacticalBot {
           const site = game.getBombsiteAt(this.position);
           if (site) {
             this.plantProgress += dt;
-            if (this.plantProgress >= 3.2) {
+            if (this.plantProgress >= (diffCfg.plantTime || 3.2)) {
               game.plantC4(this.position, site.name, this.name);
               this.hasC4 = false;
               this.plantProgress = 0;
             }
-            this.updateAnimations(dt, 0);
+            this.updateAnimations(dt, 0, game);
             return;
           }
         }
@@ -620,12 +880,58 @@ class TacticalBot {
           const dToBomb = Math.hypot(this.position.x - game.plantedBomb.position.x, this.position.z - game.plantedBomb.position.z);
           if (dToBomb < 3.4) {
             this.defuseProgress += dt;
-            const reqTime = this.hasDefuseKit ? 2.5 : 5.0;
+            const reqTime = this.hasDefuseKit ? (diffCfg.defuseTime || 2.5) : 5.0;
             if (this.defuseProgress >= reqTime) {
               game.defuseC4(this.name);
               this.defuseProgress = 0;
             }
-            this.updateAnimations(dt, 0);
+            this.updateAnimations(dt, 0, game);
+            return;
+          }
+        }
+      }
+
+      // 3b. If alerted by gunshot or team callout on Hard/Nightmare, orient or hunt toward alertTargetPos
+      if (this.alertTimer > 0 && this.alertTargetPos && (diffCfg.id === 'nightmare' || diffCfg.id === 'hard')) {
+        if (diffCfg.id === 'nightmare' && !game.plantedBomb.active && !this.hasC4) {
+          const dAlert = Math.hypot(this.alertTargetPos.x - this.position.x, this.alertTargetPos.z - this.position.z);
+          if (dAlert > 4.0 && dAlert < 35.0) {
+            const nodes = CS.mapBuilder.navNodes || CS.mapBuilder.waypoints || [];
+            if (nodes.length > 0 && this.repathTimer > 1.2) {
+              const byId = {};
+              for (const n of nodes) byId[n.id] = n;
+              const curNode = (this.currentNavNode && byId[this.currentNavNode])
+                ? byId[this.currentNavNode]
+                : this.findNearestNavNode(this.position.x, this.position.z, nodes);
+              const goalNode = this.findNearestNavNode(this.alertTargetPos.x, this.alertTargetPos.z, nodes);
+              const hop = this.findNextHopBFS(curNode, goalNode, byId) || goalNode;
+              if (hop) {
+                this.currentNavNode = hop.id;
+                this.targetWaypoint = { x: hop.x, z: hop.z };
+                this.repathTimer = 1.2;
+              }
+            }
+          }
+        }
+      }
+
+      // 3c. Execute Squad Tactical Order ([V] Hold Position or [X] Follow Player escort)
+      if (this.tacticalOrder && this.tacticalOrder.timer > 0) {
+        if (this.tacticalOrder.type === 'hold' && this.tacticalOrder.pos) {
+          const dHold = Math.hypot(this.tacticalOrder.pos.x - this.position.x, this.tacticalOrder.pos.z - this.position.z);
+          if (dHold < 2.8) {
+            this.isCrouching = true;
+            this.yaw += Math.sin(performance.now() * 0.0016 + this.walkPhase) * dt * 0.75;
+            this.updateAnimations(dt, 0, game);
+            return;
+          }
+        } else if (this.tacticalOrder.type === 'follow' && game.player && !game.player.dead) {
+          this.repathTimer = Math.min(this.repathTimer, 0.85);
+          const dPlayer = Math.hypot(game.player.position.x - this.position.x, game.player.position.z - this.position.z);
+          if (dPlayer < 3.6) {
+            this.isCrouching = !!game.player.crouching;
+            this.yaw += (game.player.yaw - this.yaw) * Math.min(1, dt * 4.5);
+            this.updateAnimations(dt, 0, game);
             return;
           }
         }
@@ -649,9 +955,9 @@ class TacticalBot {
           let diff = desiredYaw - this.yaw;
           while (diff > Math.PI) diff -= Math.PI * 2;
           while (diff < -Math.PI) diff += Math.PI * 2;
-          this.yaw += diff * Math.min(1, dt * 6.5);
+          this.yaw += diff * Math.min(1, dt * (diffCfg.navTurnSpeed || 6.5));
 
-          const speed = 5.4;
+          const speed = diffCfg.moveSpeed || 5.4;
           const stepX = (dx / dist) * speed * dt;
           const stepZ = (dz / dist) * speed * dt;
           const moved = this.moveWithCollision(stepX, stepZ);
@@ -711,32 +1017,41 @@ class TacticalBot {
     return false;
   }
 
-  fireAtTarget(target, dist, game) {
+  fireAtTarget(target, dist, game, diffCfg = null) {
+    const cfg = diffCfg || this.getDifficultyConfig(game);
     const w = CS.WEAPONS[this.weaponId] || CS.WEAPONS.m4a4;
-    this.fireCooldown = Math.max(0.14, (60 / (w.fireRate || 400)) * 1.35);
+    this.fireCooldown = Math.max(0.09, (60 / (w.fireRate || 400)) * (cfg.fireRateMult || 1.35));
 
     // Play 3D positional gunshot audio
     const listenerForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), game.player.yaw);
     CS.audio.playGunshot(w.soundType, this.position, game.player.position, listenerForward);
 
-    // Spawn bullet tracer
-    const start = new THREE.Vector3(this.position.x, this.position.y + 1.42, this.position.z);
+    // Spawn bullet tracer (spread visual matches difficulty accuracy)
+    const tSpread = cfg.tracerSpread ?? 0.6;
+    const start = new THREE.Vector3(this.position.x, this.position.y + (this.isCrouching ? 1.15 : 1.42), this.position.z);
     const end = new THREE.Vector3(
-      target.pos.x + (Math.random() - 0.5) * 0.6,
-      target.pos.y + 1.15 + (Math.random() - 0.5) * 0.5,
-      target.pos.z + (Math.random() - 0.5) * 0.6
+      target.pos.x + (Math.random() - 0.5) * tSpread,
+      target.pos.y + 1.15 + (Math.random() - 0.5) * (tSpread * 0.8),
+      target.pos.z + (Math.random() - 0.5) * tSpread
     );
     game.spawnTracer(start, end);
 
-    // Hit probability based on distance & flash status
-    const hitChance = Math.max(0.12, 0.52 - dist * 0.0045) * (this.flashedTimer > 0 ? 0.15 : 1.0);
+    // Hit probability based on difficulty, distance, crouching & flash status
+    const baseHit = cfg.hitChanceBase ?? 0.52;
+    const minHit = cfg.hitChanceMin ?? 0.12;
+    const falloff = cfg.hitDistFalloff ?? 0.0045;
+    const crouchBonus = this.isCrouching ? 1.12 : 1.0;
+    const hitChance = Math.max(minHit, baseHit - dist * falloff) * (this.flashedTimer > 0 ? 0.15 : 1.0) * crouchBonus;
+
     if (Math.random() < hitChance) {
-      const isHead = Math.random() < 0.14;
-      const rawDmg = w.damage * (isHead ? 1.85 : 0.72) * 0.55; // Balanced for fun player survivability
+      const isHead = Math.random() < (cfg.headshotChance ?? 0.14);
+      const dmgMult = cfg.damageMult ?? 0.55;
+      const rawDmg = w.damage * (isHead ? 1.85 : 0.72) * dmgMult;
       if (target.isPlayer) {
         game.damagePlayer(rawDmg, this, isHead);
       } else {
-        const killed = target.entity.takeDamage(rawDmg * 1.45, this, isHead);
+        const botVsBotDmg = w.damage * (isHead ? 1.85 : 0.72) * 0.55 * 1.45;
+        const killed = target.entity.takeDamage(botVsBotDmg, this, isHead);
         if (killed) {
           game.onEntityKilled(this, target.entity, this.weaponId, isHead);
         }
@@ -749,15 +1064,22 @@ class TacticalBot {
     this.mesh.position.copy(this.position);
     this.mesh.rotation.set(0, this.yaw, 0);
 
+    // Animate tactical crouch (ducking upperBody down in combat)
+    if (this.mesh.userData.upperBody) {
+      const targetUpperY = this.isCrouching ? 0.62 : 0.86;
+      this.mesh.userData.upperBody.position.y += (targetUpperY - this.mesh.userData.upperBody.position.y) * Math.min(1, dt * 12);
+    }
+
     this.walkPhase += dt * 9.5 * moveFactor;
-    const swing = Math.sin(this.walkPhase) * 0.48 * moveFactor;
+    const swing = Math.sin(this.walkPhase) * (this.isCrouching ? 0.28 : 0.48) * moveFactor;
     if (this.mesh.userData.leftLegPivot && this.mesh.userData.rightLegPivot) {
-      this.mesh.userData.leftLegPivot.rotation.x = swing;
-      this.mesh.userData.rightLegPivot.rotation.x = -swing;
+      const crouchKnee = this.isCrouching ? -0.35 : 0;
+      this.mesh.userData.leftLegPivot.rotation.x = crouchKnee + swing;
+      this.mesh.userData.rightLegPivot.rotation.x = crouchKnee - swing;
     }
 
     // 3D positional footstep audio for moving bots nearby
-    if (moveFactor > 0.2 && game && game.player && !game.player.dead) {
+    if (moveFactor > 0.2 && !this.isCrouching && game && game.player && !game.player.dead) {
       this.stepAccum += dt * 5.2 * moveFactor;
       if (this.stepAccum >= 2.35) {
         this.stepAccum = 0;
