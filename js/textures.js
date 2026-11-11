@@ -851,6 +851,76 @@ class TextureGenerator {
           ctx.stroke();
         }
       }
+    } else if (p === 'tiger_stripe') {
+      const g = ctx.createLinearGradient(0, 0, 512, 512);
+      g.addColorStop(0, '#d97706');
+      g.addColorStop(0.5, '#fbbf24');
+      g.addColorStop(1, '#b45309');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillStyle = '#0f172a';
+      for (let i = 0; i < 18; i++) {
+        const y = (i * 34) - 20;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(180, y + 32);
+        ctx.lineTo(360, y - 14);
+        ctx.lineTo(512, y + 24);
+        ctx.lineTo(512, y + 40);
+        ctx.lineTo(350, y + 6);
+        ctx.lineTo(180, y + 48);
+        ctx.lineTo(0, y + 18);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (p === 'ruby_crystal') {
+      const g = ctx.createLinearGradient(0, 0, 512, 512);
+      g.addColorStop(0, '#4c0519');
+      g.addColorStop(0.38, '#e11d48');
+      g.addColorStop(0.68, '#fb7185');
+      g.addColorStop(1, '#881337');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 22; i++) {
+        const rx = (i * 89) % 512;
+        const ry = (i * 119) % 512;
+        const rg = ctx.createRadialGradient(rx, ry, 4, rx, ry, 92);
+        rg.addColorStop(0, 'rgba(255, 180, 200, 0.5)');
+        rg.addColorStop(1, 'rgba(76, 5, 25, 0)');
+        ctx.fillStyle = rg;
+        ctx.beginPath(); ctx.arc(rx, ry, 92, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (p === 'sapphire_nebula') {
+      const g = ctx.createLinearGradient(0, 0, 512, 512);
+      g.addColorStop(0, '#090d16');
+      g.addColorStop(0.4, '#1d4ed8');
+      g.addColorStop(0.75, '#0284c7');
+      g.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 65; i++) {
+        const sx = (i * 73 + 19) % 508;
+        const sy = (i * 131 + 29) % 508;
+        ctx.fillStyle = i % 3 === 0 ? '#38bdf8' : '#ffffff';
+        ctx.beginPath(); ctx.arc(sx, sy, (i % 3) + 1.2, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (p === 'obsidian_lightning') {
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 4;
+      for (let b = 0; b < 8; b++) {
+        let lx = (b * 68) + 20;
+        let ly = 0;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        while (ly < 512) {
+          ly += 36;
+          lx += ((ly * 17 + b * 31) % 44) - 22;
+          ctx.lineTo(lx, ly);
+        }
+        ctx.stroke();
+      }
     } else if (p === 'hex_grid') {
       const g = ctx.createLinearGradient(0, 0, 512, 512);
       g.addColorStop(0, '#0c1c3d');
@@ -1813,18 +1883,19 @@ class TextureGenerator {
     const skinCanvas = this.getSkinCanvas(skin.id);
 
     ctx.save();
-    if (knifeId === 'knife_karambit') {
-      // ★ KARAMBIT: Finger ring + Curved grip + Sweeping Tiger-Claw Blade
+    if (knifeId === 'knife_karambit' || knifeId === 'knife_talon') {
+      const isTalon = knifeId === 'knife_talon';
+      // ★ KARAMBIT / TALON KNIFE: Finger ring + Curved grip + Sweeping Tiger-Claw Blade
       // 1. Finger Ring
-      ctx.strokeStyle = '#64748b';
+      ctx.strokeStyle = isTalon ? '#d97706' : '#64748b';
       ctx.lineWidth = 8;
       ctx.beginPath();
       ctx.arc(96, 142, 18, 0, Math.PI * 2);
       ctx.stroke();
 
-      // 2. Ergonomic Curved Handle with finger notches
-      ctx.fillStyle = '#111827';
-      ctx.strokeStyle = '#334155';
+      // 2. Ergonomic Curved Handle (Ivory with brass pins for Talon, Dark tactical for Karambit)
+      ctx.fillStyle = isTalon ? '#f8fafc' : '#111827';
+      ctx.strokeStyle = isTalon ? '#d97706' : '#334155';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(108, 128);
@@ -1835,16 +1906,25 @@ class TextureGenerator {
       ctx.fill();
       ctx.stroke();
 
-      // Handle grip ribs
-      ctx.strokeStyle = '#475569';
-      for (let i = 0; i < 4; i++) {
-        ctx.beginPath();
-        ctx.moveTo(132 + i * 18, 108 - i * 4);
-        ctx.lineTo(138 + i * 18, 126 - i * 4);
-        ctx.stroke();
+      // Handle grip ribs or Talon brass rivets
+      if (isTalon) {
+        ctx.fillStyle = '#fbbf24';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(140 + i * 24, 114 - i * 5, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.strokeStyle = '#475569';
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(132 + i * 18, 108 - i * 4);
+          ctx.lineTo(138 + i * 18, 126 - i * 4);
+          ctx.stroke();
+        }
       }
 
-      // 3. Curved Karambit Claw Blade (SKINNED!)
+      // 3. Curved Karambit / Talon Claw Blade (SKINNED!)
       ctx.beginPath();
       ctx.moveTo(212, 80);
       ctx.quadraticCurveTo(308, 52, 356, 148); // Outer spine curve to sharp tip
@@ -2022,62 +2102,606 @@ class TextureGenerator {
     drawSingleGlove(268, 108, 0.14, -1);
   }
 
-  // --- DETAILED AGENT OUTFIT STUDIO RENDERS ---
+  // --- DETAILED AGENT OUTFIT STUDIO RENDERS (8 UNIQUE ARMOR ARCHITECTURES!) ---
   _drawOutfitStudioRender(ctx, outfitId, W, H) {
     const o = CS.AGENT_OUTFITS[outfitId] || CS.AGENT_OUTFITS.sas_navy;
     const cx = W / 2;
 
     ctx.save();
-    // Shoulders & Tactical Suit
-    ctx.fillStyle = o.suitColor;
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(cx - 88, 104, 176, 98, [34, 34, 0, 0]);
-    ctx.fill();
-    ctx.stroke();
 
-    // Shoulder Armor Pads
-    ctx.fillStyle = o.accentColor;
-    ctx.beginPath();
-    ctx.roundRect(cx - 92, 114, 28, 48, 10);
-    ctx.roundRect(cx + 64, 114, 28, 48, 10);
-    ctx.fill();
+    if (outfitId === 'sas_navy') {
+      // 1. SAS MIDNIGHT TACTICAL: S10 CBRN Gas Mask (Dual Round Lenses + Respirator Snout + Side Canister), Radio & Flashbangs
+      // Torso & Shoulders
+      ctx.fillStyle = o.suitColor;
+      ctx.strokeStyle = 'rgba(56,189,248,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 88, 108, 176, 94, [34, 34, 0, 0]);
+      ctx.fill();
+      ctx.stroke();
 
-    // Plate Carrier Vest & Mag Pouches
-    ctx.fillStyle = o.vestColor;
-    ctx.beginPath();
-    ctx.roundRect(cx - 56, 112, 112, 90, 10);
-    ctx.fill();
-    ctx.fillStyle = o.accentColor;
-    ctx.fillRect(cx - 28, 122, 56, 12); // Chest patch
-    ctx.fillStyle = o.helmetColor;
-    [-34, 0, 34].forEach(px => {
-      ctx.fillRect(cx + px - 12, 148, 24, 36);
-    });
+      // Shoulder Pads with SAS Blue Tactical Stripe
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.roundRect(cx - 94, 114, 30, 50, 10);
+      ctx.roundRect(cx + 64, 114, 30, 50, 10);
+      ctx.fill();
+      ctx.fillStyle = o.accentColor;
+      ctx.fillRect(cx - 94, 126, 30, 9);
+      ctx.fillRect(cx + 64, 126, 30, 9);
 
-    // Ballistic Helmet & Head
-    ctx.fillStyle = o.helmetColor;
-    ctx.beginPath();
-    ctx.roundRect(cx - 42, 34, 84, 72, [36, 36, 16, 16]);
-    ctx.fill();
-    ctx.stroke();
+      // Plate Carrier Vest + Cross Webbing
+      ctx.fillStyle = o.vestColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 56, 112, 112, 90, 10);
+      ctx.fill();
 
-    // Glowing Ballistic Visor / Goggles
-    ctx.shadowColor = o.visorColor;
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = o.visorColor;
-    ctx.beginPath();
-    ctx.roundRect(cx - 32, 58, 64, 24, 8);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+      // Walkie-Talkie Radio + Whip Antenna (Left Chest) & 2 Flashbangs (Right Chest)
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(cx - 44, 118, 22, 30);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 38, 118); ctx.lineTo(cx - 42, 92);
+      ctx.stroke();
 
-    // Visor reflection slash
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.beginPath();
-    ctx.moveTo(cx - 18, 58); ctx.lineTo(cx - 4, 58); ctx.lineTo(cx - 16, 82); ctx.lineTo(cx - 26, 82);
-    ctx.closePath();
-    ctx.fill();
+      [cx + 14, cx + 32].forEach(fx => {
+        ctx.fillStyle = '#475569';
+        ctx.beginPath(); ctx.roundRect(fx, 118, 12, 26, 4); ctx.fill();
+        ctx.fillStyle = o.visorColor;
+        ctx.fillRect(fx, 126, 12, 6);
+      });
+
+      // 3 MP5 Mag Pouches
+      [-34, 0, 34].forEach(px => {
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath(); ctx.roundRect(cx + px - 12, 152, 24, 38, 4); ctx.fill();
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(cx + px - 12, 152, 24, 10);
+      });
+
+      // Kevlar FAST Helmet + Side Comms Ear-Defenders
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.roundRect(cx - 52, 52, 14, 28, 5);
+      ctx.roundRect(cx + 38, 52, 14, 28, 5);
+      ctx.fill();
+
+      ctx.fillStyle = o.helmetColor;
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 44, 28, 88, 76, [38, 38, 22, 22]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Dual Circular S10 Gas Mask Eye Lenses
+      [-19, 19].forEach(lx => {
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath(); ctx.arc(cx + lx, 62, 15, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowColor = o.visorColor;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = o.visorColor;
+        ctx.beginPath(); ctx.arc(cx + lx, 62, 11.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath(); ctx.arc(cx + lx - 4, 58, 3.5, 0, Math.PI * 2); ctx.fill();
+      });
+
+      // Central Respirator Snout & Angled Side Filter Canister
+      ctx.fillStyle = '#090d16';
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, 88, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#334155';
+      ctx.beginPath(); ctx.arc(cx, 88, 8, 0, Math.PI * 2); ctx.fill();
+
+      ctx.save();
+      ctx.translate(cx - 34, 88);
+      ctx.rotate(0.45);
+      ctx.fillStyle = o.accentColor;
+      ctx.beginPath(); ctx.roundRect(-14, -10, 28, 20, 6); ctx.fill(); ctx.stroke();
+      ctx.restore();
+
+    } else if (outfitId === 'gign_urban') {
+      // 2. GIGN RIOT SPECIALIST: Heavy Juggernaut Suit, 360° Neck Collar, Altyn Titanium Helmet, Gold Visor & Shotgun Shells
+      // Extra-Wide Heavy Juggernaut Shoulders & Layered Pauldrons
+      ctx.fillStyle = o.suitColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 104, 102, 208, 100, [40, 40, 0, 0]);
+      ctx.fill();
+
+      ctx.fillStyle = o.accentColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 108, 112, 38, 62, 12);
+      ctx.roundRect(cx + 70, 112, 38, 62, 12);
+      ctx.fill();
+      ctx.fillStyle = o.vestColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 104, 118, 30, 36, 8);
+      ctx.roundRect(cx + 74, 118, 30, 36, 8);
+      ctx.fill();
+
+      // Massive EOD Plate Carrier + Segmented Plates
+      ctx.fillStyle = o.vestColor;
+      ctx.strokeStyle = o.accentColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 66, 108, 132, 94, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // 360° Armored Ballistic Neck Collar (Gorget)
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = o.accentColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 58, 88, 116, 28, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // 6x Red & Brass 12-Gauge Shotgun Shells Bandolier across Chest!
+      for (let i = -2.5; i <= 2.5; i += 1) {
+        const sx = cx + i * 18;
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(sx - 5, 126, 10, 22);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(sx - 5, 120, 10, 7);
+      }
+
+      // Heavy Altyn Titanium Riot Helmet + Hinged Face Shield
+      ctx.fillStyle = o.helmetColor;
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(cx - 50, 22, 100, 76, [44, 44, 14, 14]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Steel Face Shield Frame + Bolts
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.roundRect(cx - 44, 42, 88, 46, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // Panoramic Gold Bulletproof Visor Slit
+      ctx.shadowColor = o.visorColor;
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = o.visorColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 38, 50, 76, 22, 6);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (outfitId === 'desert_seal') {
+      // 3. SEAL SANDSTORM OPS: Quad-Tube GPNVG-18 Night Vision Goggles, Desert Shemagh Scarf & Dual Radio Antennas
+      // Dual Long-Range Whip Antennas behind Shoulders
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(cx - 46, 115); ctx.lineTo(cx - 56, 14);
+      ctx.moveTo(cx + 46, 115); ctx.lineTo(cx + 56, 14);
+      ctx.stroke();
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(cx - 56, 14, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 56, 14, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Desert Camo Suit & Shoulders
+      ctx.fillStyle = o.suitColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 88, 108, 176, 94, [34, 34, 0, 0]);
+      ctx.fill();
+
+      // Desert Plate Carrier + 4 STANAG Mags + Green Chemlight Glowstick
+      ctx.fillStyle = o.vestColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 56, 114, 112, 88, 10);
+      ctx.fill();
+
+      ctx.shadowColor = '#10b981';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath(); ctx.roundRect(cx - 24, 126, 48, 7, 4); ctx.fill();
+      ctx.shadowBlur = 0;
+
+      [-36, -12, 12, 36].forEach(mx => {
+        ctx.fillStyle = o.helmetColor;
+        ctx.beginPath(); ctx.roundRect(cx + mx - 9, 146, 18, 42, 4); ctx.fill();
+      });
+
+      // Desert Shemagh Scarf wrapped around Neck & Lower Face
+      ctx.fillStyle = '#d6c096';
+      ctx.strokeStyle = '#786240';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 48, 82, 96, 36, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      // High-Cut Desert Helmet
+      ctx.fillStyle = o.helmetColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 44, 26, 88, 68, [38, 38, 16, 16]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Quad-Tube Panoramic Night Vision Goggles (GPNVG-18 — 4 Glowing Green Tubes!)
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(cx - 46, 48, 92, 12);
+      [-33, -11, 11, 33].forEach(tx => {
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx + tx, 62, 11.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+        ctx.shadowColor = '#10b981';
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath(); ctx.arc(cx + tx, 62, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#a7f3d0';
+        ctx.beginPath(); ctx.arc(cx + tx - 2.5, 59.5, 2.5, 0, Math.PI * 2); ctx.fill();
+      });
+
+    } else if (outfitId === 'phoenix_crimson') {
+      // 4. PHOENIX ENFORCER: Ballistic Skull Mask, Slanted Crimson Beret, Spiked Pauldrons & Gold Bullet Bandolier
+      // Suit & Spiked Mercenary Pauldrons
+      ctx.fillStyle = o.suitColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 90, 108, 180, 94, [34, 34, 0, 0]);
+      ctx.fill();
+
+      // Crimson Shoulder Plates + Chrome Spikes
+      ctx.fillStyle = o.accentColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - 98, 112, 34, 52, 8);
+      ctx.roundRect(cx + 64, 112, 34, 52, 8);
+      ctx.fill();
+
+      ctx.fillStyle = '#e2e8f0';
+      [[-88, 112, -96, 90, -76, 112], [-72, 112, -76, 92, -62, 112],
+       [88, 112, 96, 90, 76, 112], [72, 112, 76, 92, 62, 112]].forEach(([x1, y1, x2, y2, x3, y3]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + x1, y1); ctx.lineTo(cx + x2, y2); ctx.lineTo(cx + x3, y3);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // Heavy Crimson Chest Rig + Diagonal Brass MG Bullet Bandolier
+      ctx.fillStyle = o.vestColor;
+      ctx.strokeStyle = o.accentColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 58, 112, 116, 90, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      for (let b = -4; b <= 4; b++) {
+        ctx.save();
+        ctx.translate(cx + b * 11, 152 + b * 7);
+        ctx.rotate(-0.6);
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath(); ctx.roundRect(-4, -12, 8, 24, 3); ctx.fill();
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(-4, -12, 8, 6);
+        ctx.restore();
+      }
+
+      // Dark Hooded Head + Bone-White Ballistic Skull Faceplate
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.roundRect(cx - 42, 32, 84, 70, 30);
+      ctx.fill();
+
+      ctx.fillStyle = '#e5e7eb';
+      ctx.strokeStyle = '#4b5563';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 36, 44, 72, 56, [20, 20, 14, 14]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing Red Angry Skull Eyes
+      ctx.shadowColor = '#ef4444';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(cx - 28, 56); ctx.lineTo(cx - 6, 62); ctx.lineTo(cx - 10, 70); ctx.lineTo(cx - 28, 66); ctx.closePath();
+      ctx.moveTo(cx + 28, 56); ctx.lineTo(cx + 6, 62); ctx.lineTo(cx + 10, 70); ctx.lineTo(cx + 28, 66); ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Skull Nose & Jaw Teeth Vents
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.moveTo(cx, 68); ctx.lineTo(cx - 6, 78); ctx.lineTo(cx + 6, 78); ctx.closePath();
+      ctx.fill();
+      [-16, -8, 0, 8, 16].forEach(tx => {
+        ctx.fillRect(cx + tx - 2, 83, 4, 14);
+      });
+
+      // Slanted Crimson Commando Beret + Gold Phoenix Flash
+      ctx.save();
+      ctx.translate(cx + 2, 34);
+      ctx.rotate(-0.14);
+      ctx.fillStyle = '#b91c1c';
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-48, -14, 96, 26, [18, 18, 6, 6]);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath(); ctx.arc(-22, -1, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+    } else if (outfitId === 'cyber_spectre') {
+      // 5. CYBER SPECTRE NEON: Angular Cyberpunk Exo-Suit, Glowing Arc-Reactor Chest Core, V-Laser Visor & Magenta Cyber-Fins
+      // Floating Angular Cyber Shoulder Wings
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = o.accentColor;
+      ctx.lineWidth = 2.5;
+      [[-106, 104, -56, 114, -66, 168, -98, 152],
+       [106, 104, 56, 114, 66, 168, 98, 152]].forEach(pts => {
+        ctx.beginPath();
+        ctx.moveTo(cx + pts[0], pts[1]);
+        ctx.lineTo(cx + pts[2], pts[3]);
+        ctx.lineTo(cx + pts[4], pts[5]);
+        ctx.lineTo(cx + pts[6], pts[7]);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      // Segmented Carbon Exo-Torso + Neon Rib Strips
+      ctx.fillStyle = o.vestColor;
+      ctx.strokeStyle = o.visorColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - 60, 110, 120, 92, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing Circular Arc-Reactor Energy Core in Center of Chest!
+      ctx.shadowColor = o.visorColor;
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = o.accentColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, 150, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = o.visorColor;
+      ctx.beginPath(); ctx.arc(cx, 150, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx, 150, 6, 0, Math.PI * 2); ctx.fill();
+
+      // Twin Glowing Magenta Cyber-Fins / Cat-Ear Antennas on Helmet
+      ctx.fillStyle = o.accentColor;
+      [[-36, 36, -50, 6, -16, 26], [36, 36, 50, 6, 16, 26]].forEach(([x1, y1, x2, y2, x3, y3]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + x1, y1); ctx.lineTo(cx + x2, y2); ctx.lineTo(cx + x3, y3);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // Faceted Octagonal Cyberpunk Helmet Dome
+      ctx.fillStyle = o.helmetColor;
+      ctx.strokeStyle = o.visorColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 26, 22); ctx.lineTo(cx + 26, 22);
+      ctx.lineTo(cx + 44, 46); ctx.lineTo(cx + 36, 86);
+      ctx.lineTo(cx, 102); ctx.lineTo(cx - 36, 86);
+      ctx.lineTo(cx - 44, 46); ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // V-Shaped Neon Cyan Laser Visor
+      ctx.shadowColor = o.visorColor;
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = o.visorColor;
+      ctx.beginPath();
+      ctx.moveTo(cx - 34, 48); ctx.lineTo(cx, 62); ctx.lineTo(cx + 34, 48);
+      ctx.lineTo(cx + 30, 62); ctx.lineTo(cx, 75); ctx.lineTo(cx - 30, 62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (outfitId === 'gold_commander') {
+      // 6. ★ GLOBAL ELITE COMMANDER: Royal Cape, Golden Eagle Cuirass, Imperial Epaulettes & 24k Gold Crown Helmet
+      // Flowing Royal Black & Gold Commander Cape behind Shoulders
+      ctx.fillStyle = '#450a0a';
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - 72, 102); ctx.lineTo(cx + 72, 102);
+      ctx.lineTo(cx + 108, 202); ctx.lineTo(cx - 108, 202);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Black & Gold Fluted Breastplate
+      ctx.fillStyle = o.vestColor;
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(cx - 60, 110, 120, 92, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Imperial 24k Gold Epaulettes with Fringe
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.roundRect(cx - 98, 104, 40, 26, 8);
+      ctx.roundRect(cx + 58, 104, 40, 26, 8);
+      ctx.fill();
+
+      // Sculpted 24k Gold Eagle Emblem across Chest
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.moveTo(cx, 126);
+      ctx.lineTo(cx - 46, 134); ctx.lineTo(cx - 34, 152); ctx.lineTo(cx - 12, 150);
+      ctx.lineTo(cx, 174);
+      ctx.lineTo(cx + 12, 150); ctx.lineTo(cx + 34, 152); ctx.lineTo(cx + 46, 134);
+      ctx.closePath();
+      ctx.fill();
+
+      // Commander Helmet + 24k Gold Laurel Crown Crest
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.roundRect(cx - 10, 10, 20, 26, 6);
+      ctx.fill();
+
+      ctx.fillStyle = o.helmetColor;
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(cx - 44, 28, 88, 72, [36, 36, 16, 16]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Golden Crown Band + Mirrored Gold Visor
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(cx - 45, 42, 90, 9);
+
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.roundRect(cx - 34, 56, 68, 22, 8);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (outfitId === 'ghost_recon') {
+      // 7. ★ GHOST PHANTOM (Lv.3 Exklusiv): Draped Sniper Hood/Cowl, Skull Jaw Mask & Tri-Lens Violet Sonar Goggles
+      // Draped Stealth Sniper Poncho / Cloak
+      ctx.fillStyle = '#090d16';
+      ctx.strokeStyle = '#9333ea';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 64, 98); ctx.lineTo(cx + 64, 98);
+      ctx.lineTo(cx + 102, 202); ctx.lineTo(cx - 102, 202);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Stealth Recon Harness + 3 Glowing Violet Stealth Nodes
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.roundRect(cx - 52, 114, 104, 88, 10);
+      ctx.fill();
+
+      [-26, 0, 26].forEach(nx => {
+        ctx.shadowColor = '#a855f7';
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = '#a855f7';
+        ctx.beginPath(); ctx.roundRect(cx + nx - 6, 140, 12, 34, 4); ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      // Deep Pointed Sniper Hood / Cowl over Head
+      ctx.fillStyle = '#090d16';
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, 12);
+      ctx.quadraticCurveTo(cx + 56, 26, cx + 52, 98);
+      ctx.lineTo(cx - 52, 98);
+      ctx.quadraticCurveTo(cx - 56, 26, cx, 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Lower Skull Jaw Mask inside Hood
+      ctx.fillStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.roundRect(cx - 26, 72, 52, 22, 6);
+      ctx.fill();
+      ctx.fillStyle = '#090d16';
+      [-14, -5, 5, 14].forEach(tx => ctx.fillRect(cx + tx - 2, 76, 4, 14));
+
+      // Iconic Tri-Lens (3-Dot Triangle) Glowing Violet Sonar Goggles!
+      [[-18, 58], [18, 58], [0, 40]].forEach(([gx, gy]) => {
+        ctx.shadowColor = '#a855f7';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = '#a855f7';
+        ctx.beginPath(); ctx.arc(cx + gx, gy, 9.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#f3e8ff';
+        ctx.beginPath(); ctx.arc(cx + gx, gy, 4, 0, Math.PI * 2); ctx.fill();
+      });
+
+    } else if (outfitId === 'valkyrie_prime') {
+      // 8. ★ PRIME TITAN ENFORCER (Lv.8 Exklusiv): 4 Back Energy Wings, White-Gold Paladin Armor, Cyan Diamond Core & Winged Valkyrie Helmet
+      // 4 Swept-Out Golden & Cyan Energy Wings behind the Armor!
+      [[-108, 74, -52, 122], [108, 74, 52, 122], [-114, 118, -54, 144], [114, 118, 54, 144]].forEach(([xTip, yTip, xBase, yBase]) => {
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx + xBase, yBase); ctx.lineTo(cx + xTip, yTip); ctx.stroke();
+
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(cx + xBase, yBase + 6); ctx.lineTo(cx + xTip * 0.92, yTip + 8); ctx.stroke();
+      });
+
+      // Winged White-Titanium & 24k Gold Pauldrons
+      ctx.fillStyle = '#f8fafc';
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(cx - 96, 106, 192, 96, [36, 36, 0, 0]);
+      ctx.fill();
+      ctx.stroke();
+
+      // Sculpted Paladin Breastplate + Glowing Cyan Diamond Core
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.roundRect(cx - 58, 110, 116, 92, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, 150);
+      ctx.rotate(Math.PI / 4);
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#00f0ff';
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(-15, -15, 30, 30, 4); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      ctx.shadowBlur = 0;
+
+      // Golden Valkyrie Helmet Side-Wings!
+      ctx.fillStyle = '#fbbf24';
+      [[-42, 62, -66, 14, -36, 38], [42, 62, 66, 14, 36, 38]].forEach(([x1, y1, x2, y2, x3, y3]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + x1, y1); ctx.lineTo(cx + x2, y2); ctx.lineTo(cx + x3, y3);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // White Ceramic Valkyrie Helmet + T-Shaped Cyan Paladin Visor
+      ctx.fillStyle = '#f8fafc';
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(cx - 42, 26, 84, 72, [36, 36, 18, 18]);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = '#00f0ff';
+      ctx.beginPath();
+      ctx.roundRect(cx - 32, 50, 64, 14, 5);
+      ctx.roundRect(cx - 7, 50, 14, 38, 4);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
 
     ctx.restore();
   }

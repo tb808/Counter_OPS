@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COUNTER OPS: TACTICAL STRIKE — 3D Tactical Browser Shooter</title>
-  <link rel="stylesheet" href="css/style.css?v=10" />
+  <link rel="stylesheet" href="css/style.css?v=12" />
 </head>
 <body>
 
@@ -28,16 +28,20 @@
 
       <nav class="lobby-nav">
         <button class="nav-tab-btn active" data-tab="play">🎮 SPIELEN</button>
-        <button class="nav-tab-btn" data-tab="loadout">🧍 AUSSEHEN &amp; INVENTAR</button>
-        <button class="nav-tab-btn" data-tab="cases">📦 KISTEN ÖFFNEN</button>
-        <button class="nav-tab-btn" data-tab="shop">🛒 ITEM SHOP</button>
+        <button class="nav-tab-btn" data-tab="loadout">🧍 INVENTAR</button>
+        <button class="nav-tab-btn" data-tab="levels">🎖️ LEVEL-PFAD <span id="level-unclaimed-badge" class="unclaimed-badge hidden">0</span></button>
+        <button class="nav-tab-btn" data-tab="cases">📦 KISTEN</button>
+        <button class="nav-tab-btn" data-tab="shop">🛒 SHOP</button>
         <button class="nav-tab-btn" data-tab="stats">📊 STATISTIKEN</button>
         <button class="nav-tab-btn" data-tab="settings">⚙️ EINSTELLUNGEN</button>
       </nav>
 
       <div class="lobby-profile-bar">
-        <div class="rank-box">
-          <div id="header-rank-name">🥈 Silver Elite</div>
+        <div id="header-rank-box" class="rank-box" title="Klicken, um den Level-Pfad &amp; deine Level-Belohnungen zu öffnen!">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div id="header-rank-name">🎖️ Lv.0 • Rekrut</div>
+            <div id="header-xp-text" class="header-xp-text">0 / 300 XP</div>
+          </div>
           <div class="xp-bar-bg"><div id="header-xp-fill"></div></div>
         </div>
         <div class="credits-pill">
@@ -174,7 +178,8 @@
             </div>
             <div class="stats-header-actions">
               <div id="stats-fav-weapon-pill" class="stats-fav-pill">★ Lieblingswaffe: -</div>
-              <button id="btn-reset-stats" class="nav-tab-btn stats-reset-btn" title="Alle Kampfstatistiken auf 0 zurücksetzen">🔄 Statistiken zurücksetzen</button>
+              <button id="btn-reset-stats" class="nav-tab-btn stats-reset-btn" title="Nur Kampfstatistiken auf 0 zurücksetzen (Skins &amp; Rang bleiben erhalten)">🔄 Nur Stats zurücksetzen</button>
+              <button id="btn-reset-account" class="nav-tab-btn account-reset-btn" title="Kompletten Account auf Anfang zurücksetzen (Level 0, 0 CR, keine Skins)">⚠️ Account komplett zurücksetzen</button>
             </div>
           </div>
 
@@ -196,6 +201,14 @@
               <div id="stats-career-extra" class="stats-career-extra"></div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- 5B. LEVEL PROGRESSION & EXCLUSIVE REWARDS TAB -->
+      <section id="tab-levels" class="lobby-tab-panel">
+        <div class="glass-panel level-pass-wrapper">
+          <div id="level-pass-header" class="level-pass-header"></div>
+          <div id="level-rewards-grid" class="level-rewards-grid"></div>
         </div>
       </section>
 
@@ -237,6 +250,16 @@
             <div><strong>[B]</strong> Waffen- &amp; Granaten-Kaufmenü &bull; <strong>[R]</strong> Nachladen &bull; <strong>[F]</strong> Waffe / Messer inspizieren!</div>
             <div><strong>[1-5]</strong> Waffenslots &bull; <strong>[Q]</strong> Schneller Waffenwechsel &bull; <strong>[G]</strong> Waffe fallenlassen</div>
             <div><strong>[E]</strong> Bombe platzieren / entschärfen / Waffe aufheben &bull; <strong>[Z, X, V]</strong> Funkbefehle &bull; <strong>[TAB]</strong> Scoreboard</div>
+          </div>
+
+          <div class="panel-title" style="margin-top:12px;color:#fca5a5;">🚨 ACCOUNT &amp; SPIELSTAND VERWALTEN</div>
+          <div class="account-reset-box">
+            <div style="font-size:12px;color:#cbd5e1;line-height:1.45;">
+              Setzt deinen gesamten Account wieder auf den <strong>Neustart-Zustand</strong> zurück: <strong>Level 0 (0 XP)</strong>, <strong>0 Credits</strong>, <strong>keine freigeschalteten Skins / Messer / Handschuhe</strong> und alle Statistiken auf 0.
+            </div>
+            <button id="btn-settings-reset-account" class="nav-tab-btn account-reset-btn" style="width:100%;justify-content:center;padding:10px 14px !important;">
+              ⚠️ ACCOUNT KOMPLETT AUF ANFANG ZURÜCKSETZEN (LEVEL 0)
+            </button>
           </div>
         </div>
       </section>
@@ -461,6 +484,24 @@
         </div>
       </div>
 
+      <!-- Match XP Breakdown & Level Progress Box -->
+      <div id="round-end-xp-box" class="round-end-xp-box">
+        <div class="round-end-xp-top">
+          <span id="round-end-rank-label" style="font-weight:900;color:#f8fafc;">🎖️ Level 0 • Rekrut</span>
+          <span id="round-end-xp-total" style="font-weight:900;color:#4ade80;">+180 XP</span>
+        </div>
+        <div id="round-end-xp-breakdown" class="round-end-xp-breakdown">
+          Sieg: +180 XP &bull; Kills (0): +0 XP
+        </div>
+        <div class="round-end-xp-track">
+          <div id="round-end-xp-fill" class="round-end-xp-fill"></div>
+        </div>
+        <div id="round-end-xp-sub" class="round-end-xp-sub">0 / 300 XP bis Level 1</div>
+        <div id="round-end-levelup-banner" class="round-end-levelup-banner hidden">
+          🎉 LEVEL AUFSTIEG! Neue exklusive Belohnung im 🎖️ LEVEL-PFAD abholbereit!
+        </div>
+      </div>
+
       <p style="font-size:13px;color:#94a3b8;">Möchtest du noch eine 5-Minuten-Runde spielen oder zurück ins Hauptmenü?</p>
 
       <div style="display:flex;flex-direction:column;gap:10px;">
@@ -523,13 +564,13 @@
 
   <!-- SCRIPTS (Local Three.js + Modular Game Engine) -->
   <script src="js/lib/three.min.js?v=5"></script>
-  <script src="js/data.js?v=10"></script>
-  <script src="js/audio.js?v=10"></script>
-  <script src="js/textures.js?v=10"></script>
-  <script src="js/weapons3d.js?v=10"></script>
-  <script src="js/maps.js?v=10"></script>
-  <script src="js/entities.js?v=10"></script>
-  <script src="js/ui.js?v=10"></script>
-  <script src="js/game.js?v=10"></script>
+  <script src="js/data.js?v=13"></script>
+  <script src="js/audio.js?v=13"></script>
+  <script src="js/textures.js?v=13"></script>
+  <script src="js/weapons3d.js?v=13"></script>
+  <script src="js/maps.js?v=13"></script>
+  <script src="js/entities.js?v=13"></script>
+  <script src="js/ui.js?v=13"></script>
+  <script src="js/game.js?v=13"></script>
 </body>
 </html>

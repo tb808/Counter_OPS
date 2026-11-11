@@ -58,18 +58,19 @@ class UIManager {
     };
   }
 
-  loadProfile() {
-    const defaultStats = this.getDefaultStats();
-    const defaultProfile = {
+  getDefaultProfile() {
+    return {
       playerName: 'StrikeCommander',
       credits: 0, // Starts at 0 credits - earn through playing matches!
-      xp: 450,
+      xp: 0,      // Level 0 (Silver I, 0 XP)
       economyVersion: 2,
       totalKills: 0,
-      ownedSkins: ['default', 'camo_desert'],
+      ownedSkins: ['default'],
       ownedKnives: ['knife_default'],
       ownedOutfits: ['sas_navy'],
       ownedGloves: ['gloves_default'],
+      claimedLevels: [],
+      freeCases: {},
       equippedOutfit: 'sas_navy',
       equippedGlove: 'gloves_default',
       equippedKnife: 'knife_default',
@@ -89,8 +90,13 @@ class UIManager {
         botCount: 4, // 5v5 (Player + 4 allies vs 5 enemies)
         difficulty: 'hard' // Default AI difficulty ('easy', 'medium', 'hard', 'nightmare')
       },
-      stats: defaultStats
+      stats: this.getDefaultStats()
     };
+  }
+
+  loadProfile() {
+    const defaultStats = this.getDefaultStats();
+    const defaultProfile = this.getDefaultProfile();
 
     try {
       const raw = localStorage.getItem(this.storageKey);
@@ -116,6 +122,8 @@ class UIManager {
       return {
         ...defaultProfile,
         ...parsed,
+        claimedLevels: Array.isArray(parsed.claimedLevels) ? parsed.claimedLevels : [],
+        freeCases: { ...(parsed.freeCases || {}) },
         weaponSkins: { ...defaultProfile.weaponSkins, ...(parsed.weaponSkins || {}) },
         settings: { ...defaultProfile.settings, ...(parsed.settings || {}) },
         stats: mergedStats
@@ -123,6 +131,27 @@ class UIManager {
     } catch (e) {
       return defaultProfile;
     }
+  }
+
+  resetFullAccount() {
+    const fresh = this.getDefaultProfile();
+    // Keep sensitivity/volume/crosshair settings comfortable while wiping all progress, skins, XP, credits & stats
+    fresh.settings = { ...fresh.settings, ...(this.profile?.settings || {}) };
+    this.profile = fresh;
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.profile));
+    } catch (e) {}
+
+    this.updateHeaderStats();
+    this.rebuildLobbyShowcase();
+    this.renderCustomizer();
+    this.renderLevelsTab();
+    this.renderCasesTab();
+    this.renderShopTab();
+    this.renderStatsTab();
+    this.applySettingsToUI();
+    CS.audio.playUISound('buy');
+    this.showToast('⚠️ Account komplett auf Anfang zurückgesetzt (Level 0, 0 CR, keine Skins)!', 'gold');
   }
 
   ensureStats() {
@@ -224,14 +253,16 @@ class UIManager {
   getRankInfo() {
     let current = CS.RANKS[0];
     let next = CS.RANKS[1] || CS.RANKS[0];
+    let level = 0;
     for (let i = 0; i < CS.RANKS.length; i++) {
       if (this.profile.xp >= CS.RANKS[i].minXP) {
         current = CS.RANKS[i];
         next = CS.RANKS[i + 1] || CS.RANKS[i];
+        level = i;
       }
     }
     const progress = next === current ? 100 : Math.min(100, Math.round(((this.profile.xp - current.minXP) / (next.minXP - current.minXP)) * 100));
-    return { current, next, progress };
+    return { current, next, progress, level };
   }
 
   init() {
@@ -241,6 +272,7 @@ class UIManager {
     this.renderModeAndMapSelection();
     this.renderDifficultySelectors();
     this.renderCustomizer();
+    this.renderLevelsTab();
     this.renderCasesTab();
     this.renderShopTab();
     this.renderStatsTab();
@@ -381,6 +413,26 @@ class UIManager {
     }
   }
 
+  switchLobbyTab(tabId) {
+    CS.audio.playUISound('click');
+    document.querySelectorAll('.lobby-nav .nav-tab-btn[data-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.lobby-tab-panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById(`tab-${tabId}`);
+    if (panel) panel.classList.add('active');
+
+    if (tabId === 'loadout') {
+      this.rebuildLobbyShowcase();
+    } else if (tabId === 'levels') {
+      this.renderLevelsTab();
+    } else if (tabId === 'stats') {
+      this.renderStatsTab();
+    } else if (tabId === 'cases') {
+      this.renderCasesTab();
+    }
+  }
+
   // ==========================================================================
   // LOBBY NAVIGATION & EVENTS
   // ==========================================================================
@@ -388,22 +440,16 @@ class UIManager {
     // Top navigation tabs (scoped strictly to .lobby-nav buttons with data-tab!)
     document.querySelectorAll('.lobby-nav .nav-tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
-        CS.audio.playUISound('click');
-        document.querySelectorAll('.lobby-nav .nav-tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const tabId = btn.dataset.tab;
-        document.querySelectorAll('.lobby-tab-panel').forEach(p => p.classList.remove('active'));
-        const panel = document.getElementById(`tab-${tabId}`);
-        if (panel) panel.classList.add('active');
-
-        // Automatically switch 3D preview between full Agent and Weapon closeup
-        if (tabId === 'loadout') {
-          this.rebuildLobbyShowcase();
-        } else if (tabId === 'stats') {
-          this.renderStatsTab();
-        }
+        this.switchLobbyTab(btn.dataset.tab);
       });
     });
+
+    const headerRankBox = document.getElementById('header-rank-box');
+    if (headerRankBox) {
+      headerRankBox.addEventListener('click', () => {
+        this.switchLobbyTab('levels');
+      });
+    }
 
     // Player Name Callsign input & Reset Stats button on Stats tab
     const nameInput = document.getElementById('stats-player-name-input');
@@ -428,19 +474,44 @@ class UIManager {
           clearTimeout(this._resetConfirmTimer);
           this._resetConfirmTimer = setTimeout(() => {
             this._confirmResetStats = false;
-            resetStatsBtn.textContent = '🔄 Statistiken zurücksetzen';
+            resetStatsBtn.textContent = '🔄 Nur Stats zurücksetzen';
           }, 3500);
           return;
         }
         this._confirmResetStats = false;
-        resetStatsBtn.textContent = '🔄 Statistiken zurücksetzen';
+        resetStatsBtn.textContent = '🔄 Nur Stats zurücksetzen';
         this.profile.stats = this.getDefaultStats();
         this.profile.totalKills = 0;
         this.saveProfile();
         this.renderStatsTab();
-        this.showToast('🔄 Alle Kampfstatistiken wurden auf 0 zurückgesetzt.', 'info');
+        this.showToast('🔄 Kampfstatistiken wurden auf 0 zurückgesetzt.', 'info');
       });
     }
+
+    // Full Account Reset buttons (in Stats tab AND Settings tab)
+    const bindAccountResetBtn = (btnId, defaultLabel) => {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        CS.audio.playUISound('click');
+        if (this._confirmAccountResetId !== btnId) {
+          this._confirmAccountResetId = btnId;
+          btn.textContent = '🚨 WIRKLICH ALLES LÖSCHEN? NOCHMAL KLICKEN!';
+          clearTimeout(this._accountResetTimer);
+          this._accountResetTimer = setTimeout(() => {
+            this._confirmAccountResetId = null;
+            btn.textContent = defaultLabel;
+          }, 4000);
+          return;
+        }
+        this._confirmAccountResetId = null;
+        btn.textContent = defaultLabel;
+        this.resetFullAccount();
+      });
+    };
+
+    bindAccountResetBtn('btn-reset-account', '⚠️ Account komplett zurücksetzen');
+    bindAccountResetBtn('btn-settings-reset-account', '⚠️ ACCOUNT KOMPLETT AUF ANFANG ZURÜCKSETZEN (LEVEL 0)');
 
     // Toggle 3D showcase mode (Agent vs Weapon Zoom)
     const toggleViewBtn = document.getElementById('btn-toggle-3d-view');
@@ -514,16 +585,48 @@ class UIManager {
     }
   }
 
+  getUnclaimedLevelCount() {
+    const rankInfo = this.getRankInfo();
+    const claimed = Array.isArray(this.profile.claimedLevels) ? this.profile.claimedLevels : [];
+    let count = 0;
+    (CS.LEVEL_REWARDS || []).forEach(r => {
+      if (rankInfo.level >= r.level && !claimed.includes(r.level)) {
+        count++;
+      }
+    });
+    return count;
+  }
+
   updateHeaderStats() {
     const crEl = document.getElementById('header-credits');
     if (crEl) crEl.textContent = this.profile.credits.toLocaleString('de-DE');
 
     const rankInfo = this.getRankInfo();
     const rankNameEl = document.getElementById('header-rank-name');
-    if (rankNameEl) rankNameEl.textContent = `${rankInfo.current.icon} ${rankInfo.current.name}`;
+    if (rankNameEl) rankNameEl.textContent = `Lv.${rankInfo.level} • ${rankInfo.current.icon} ${rankInfo.current.name}`;
+
+    const xpTextEl = document.getElementById('header-xp-text');
+    if (xpTextEl) {
+      if (rankInfo.next === rankInfo.current) {
+        xpTextEl.textContent = `${this.profile.xp.toLocaleString('de-DE')} XP (MAX)`;
+      } else {
+        xpTextEl.textContent = `${this.profile.xp.toLocaleString('de-DE')} / ${rankInfo.next.minXP.toLocaleString('de-DE')} XP`;
+      }
+    }
 
     const xpFill = document.getElementById('header-xp-fill');
     if (xpFill) xpFill.style.width = `${rankInfo.progress}%`;
+
+    const badgeEl = document.getElementById('level-unclaimed-badge');
+    if (badgeEl) {
+      const unclaimed = this.getUnclaimedLevelCount();
+      if (unclaimed > 0) {
+        badgeEl.textContent = `${unclaimed}🎁`;
+        badgeEl.classList.remove('hidden');
+      } else {
+        badgeEl.classList.add('hidden');
+      }
+    }
   }
 
   // ==========================================================================
@@ -595,6 +698,7 @@ class UIManager {
         const equipped = this.profile.equippedOutfit === o.id;
         const rar = CS.RARITIES[o.rarity];
         const imgUrl = CS.textures.getCosmeticPreviewDataURL('outfit', o.id);
+        const lockLabel = o.levelExclusive ? `🔒 Exklusiv Level ${o.unlockLevel}` : `🔒 Im Shop (${o.price} CR)`;
         return `
           <div class="item-card ${equipped ? 'equipped' : ''} ${!owned ? 'locked' : ''}"
                style="border-color:${rar.color}" data-outfit="${o.id}">
@@ -602,7 +706,7 @@ class UIManager {
               <img class="cosmetic-preview-img" src="${imgUrl}" alt="${o.name}" />
             </div>
             <div class="item-name">${o.name}</div>
-            <div class="item-status">${equipped ? '✓ AUSGERÜSTET' : (owned ? 'AUSRÜSTEN' : `🔒 Im Shop (${o.price} CR)`)}</div>
+            <div class="item-status">${equipped ? '✓ AUSGERÜSTET' : (owned ? 'AUSRÜSTEN' : lockLabel)}</div>
           </div>
         `;
       }).join('');
@@ -618,7 +722,12 @@ class UIManager {
             this.renderCustomizer();
             this.rebuildLobbyShowcase();
           } else {
-            this.showToast('Dieses Agenten-Outfit kannst du im ITEM SHOP freischalten!', 'info');
+            const o = CS.AGENT_OUTFITS[id];
+            if (o && o.levelExclusive) {
+              this.showToast(`🎖️ Exklusive Level-${o.unlockLevel}-Belohnung! Im Reiter "LEVEL-PFAD" freischaltbar.`, 'gold');
+            } else {
+              this.showToast('Dieses Agenten-Outfit kannst du im ITEM SHOP freischalten!', 'info');
+            }
           }
         });
       });
@@ -634,6 +743,7 @@ class UIManager {
         const rar = CS.RARITIES[k.rarity];
         const knifeSkinToShow = equippedKnifeSkin !== 'default' ? equippedKnifeSkin : (k.previewSkin || 'default');
         const imgUrl = CS.textures.getCosmeticPreviewDataURL('knife', k.id, knifeSkinToShow);
+        const lockLabel = k.levelExclusive ? `🔒 Exklusiv Level ${k.unlockLevel}` : `🔒 ${k.price} CR`;
         return `
           <div class="item-card ${equipped ? 'equipped' : ''} ${!owned ? 'locked' : ''}"
                style="border-color:${rar.color}" data-type="knife" data-id="${k.id}">
@@ -641,7 +751,7 @@ class UIManager {
               <img class="cosmetic-preview-img" src="${imgUrl}" alt="${k.name}" />
             </div>
             <div class="item-name">${k.name}</div>
-            <div class="item-status">${equipped ? '✓ AKTIVES MESSER' : (owned ? 'AUSRÜSTEN' : `🔒 ${k.price} CR`)}</div>
+            <div class="item-status">${equipped ? '✓ AKTIVES MESSER' : (owned ? 'AUSRÜSTEN' : lockLabel)}</div>
           </div>
         `;
       });
@@ -651,6 +761,7 @@ class UIManager {
         const equipped = this.profile.equippedGlove === g.id;
         const rar = CS.RARITIES[g.rarity];
         const imgUrl = CS.textures.getCosmeticPreviewDataURL('glove', g.id);
+        const lockLabel = g.levelExclusive ? `🔒 Exklusiv Level ${g.unlockLevel}` : `🔒 ${g.price} CR`;
         return `
           <div class="item-card ${equipped ? 'equipped' : ''} ${!owned ? 'locked' : ''}"
                style="border-color:${rar.color}" data-type="glove" data-id="${g.id}">
@@ -658,7 +769,7 @@ class UIManager {
               <img class="cosmetic-preview-img" src="${imgUrl}" alt="${g.name}" />
             </div>
             <div class="item-name">${g.name}</div>
-            <div class="item-status">${equipped ? '✓ AKTIVE HANDSCHUHE' : (owned ? 'AUSRÜSTEN' : `🔒 ${g.price} CR`)}</div>
+            <div class="item-status">${equipped ? '✓ AKTIVE HANDSCHUHE' : (owned ? 'AUSRÜSTEN' : lockLabel)}</div>
           </div>
         `;
       });
@@ -677,7 +788,12 @@ class UIManager {
               this.renderCustomizer();
               this.rebuildLobbyShowcase();
             } else {
-              this.showToast('Messer in Kisten ziehen oder im ITEM SHOP kaufen!', 'info');
+              const k = CS.KNIFE_MODELS[id];
+              if (k && k.levelExclusive) {
+                this.showToast(`🎖️ Exklusive Level-${k.unlockLevel}-Belohnung! Nur über den LEVEL-PFAD erhältlich.`, 'gold');
+              } else {
+                this.showToast('Messer in Kisten ziehen oder im ITEM SHOP kaufen!', 'info');
+              }
             }
           } else if (type === 'glove') {
             if (this.profile.ownedGloves.includes(id)) {
@@ -687,7 +803,12 @@ class UIManager {
               this.renderCustomizer();
               this.rebuildLobbyShowcase();
             } else {
-              this.showToast('Handschuhe in Kisten ziehen oder im ITEM SHOP kaufen!', 'info');
+              const g = CS.GLOVES[id];
+              if (g && g.levelExclusive) {
+                this.showToast(`🎖️ Exklusive Level-${g.unlockLevel}-Belohnung! Nur über den LEVEL-PFAD erhältlich.`, 'gold');
+              } else {
+                this.showToast('Handschuhe in Kisten ziehen oder im ITEM SHOP kaufen!', 'info');
+              }
             }
           }
         });
@@ -725,6 +846,7 @@ class UIManager {
         const equipped = currentEquippedSkin === s.id;
         const rar = CS.RARITIES[s.rarity];
         const imgUrl = CS.textures.getCosmeticPreviewDataURL('skin', s.id, this.customizerWeapon);
+        const lockLabel = s.levelExclusive ? `🔒 Exklusiv Level ${s.unlockLevel}` : `🔒 ${s.price} CR`;
         return `
           <div class="item-card ${equipped ? 'equipped' : ''} ${!owned ? 'locked' : ''}"
                style="border-color:${rar.color}" data-skin="${s.id}">
@@ -733,7 +855,7 @@ class UIManager {
             </div>
             <div class="item-name">${wName} | ${s.name}</div>
             <div class="item-rarity" style="color:${rar.color}">${rar.name}</div>
-            <div class="item-status">${equipped ? '✓ AUSGERÜSTET' : (owned ? 'AUSRÜSTEN' : `🔒 ${s.price} CR`)}</div>
+            <div class="item-status">${equipped ? '✓ AUSGERÜSTET' : (owned ? 'AUSRÜSTEN' : lockLabel)}</div>
           </div>
         `;
       }).join('');
@@ -749,7 +871,12 @@ class UIManager {
             this.renderCustomizer();
             this.rebuildLobbyShowcase();
           } else {
-            this.showToast('Diesen Skin kannst du in Kisten ziehen oder im Shop kaufen!', 'info');
+            const s = CS.SKINS[sId];
+            if (s && s.levelExclusive) {
+              this.showToast(`🎖️ Exklusive Level-${s.unlockLevel}-Belohnung! Nur über den LEVEL-PFAD erhältlich.`, 'gold');
+            } else {
+              this.showToast('Diesen Skin kannst du in Kisten ziehen oder im Shop kaufen!', 'info');
+            }
           }
         });
       });
@@ -818,13 +945,15 @@ class UIManager {
 
     casesListEl.innerHTML = CS.CASES.map(c => {
       const caseImg = CS.textures.getCosmeticPreviewDataURL('case', c.id);
+      const freeCount = this.profile.freeCases?.[c.id] || 0;
+      const priceLabel = freeCount > 0 ? `🎁 ${freeCount}x GRATIS (${c.price} CR)` : `${c.price} CR`;
       return `
         <div class="case-card ${this.selectedCaseId === c.id ? 'selected' : ''}" data-case="${c.id}" style="border-color:${c.color}">
           <div class="case-preview-wrap">
             <img class="cosmetic-preview-img" src="${caseImg}" alt="${c.name}" />
           </div>
           <div class="case-title">${c.name}</div>
-          <div class="case-price">${c.price} CR</div>
+          <div class="case-price" style="${freeCount > 0 ? 'color:#4ade80;' : ''}">${priceLabel}</div>
           <div class="case-desc">${c.desc}</div>
         </div>
       `;
@@ -861,7 +990,12 @@ class UIManager {
 
     const openBtn = document.getElementById('btn-open-case');
     if (openBtn && activeCase) {
-      openBtn.textContent = `🔓 ${activeCase.name} KAUFEN & ÖFFNEN (${activeCase.price} CR)`;
+      const freeCount = this.profile.freeCases?.[activeCase.id] || 0;
+      if (freeCount > 0) {
+        openBtn.textContent = `🎁 GRATIS ${activeCase.name} ÖFFNEN (${freeCount}x VERFÜGBAR)`;
+      } else {
+        openBtn.textContent = `🔓 ${activeCase.name} KAUFEN & ÖFFNEN (${activeCase.price} CR)`;
+      }
       openBtn.onclick = () => this.startCaseUnboxing(activeCase);
     }
 
@@ -959,14 +1093,23 @@ class UIManager {
 
   startCaseUnboxing(caseObj) {
     if (this.isUnboxing) return;
-    if (this.profile.credits < caseObj.price) {
-      this.showToast(`Nicht genug Credits! Du benötigst ${caseObj.price} CR.`, 'error');
-      return;
+    if (!this.profile.freeCases) this.profile.freeCases = {};
+    const freeCount = this.profile.freeCases[caseObj.id] || 0;
+
+    if (freeCount > 0) {
+      this.profile.freeCases[caseObj.id] = freeCount - 1;
+      this.showToast(`🎁 Gratis "${caseObj.name}" aus deiner Level-Belohnung eingelöst!`, 'gold');
+    } else {
+      if (this.profile.credits < caseObj.price) {
+        this.showToast(`Nicht genug Credits! Du benötigst ${caseObj.price} CR.`, 'error');
+        return;
+      }
+      this.profile.credits -= caseObj.price;
     }
 
-    this.profile.credits -= caseObj.price;
     this.recordMedal('casesOpened');
     this.saveProfile();
+    this.renderCasesTab();
     this.isUnboxing = true;
     CS.audio.playUISound('buy');
     CS.audio.playUISound('case_unlock');
@@ -1184,7 +1327,10 @@ class UIManager {
       const reopenBtn = document.getElementById('btn-reopen-case');
       const targetCase = caseObj || CS.CASES.find(c => c.id === this.selectedCaseId) || CS.CASES[0];
       if (reopenBtn && targetCase) {
-        reopenBtn.textContent = `🔄 NOCHMAL ÖFFNEN (${targetCase.price} CR)`;
+        const remFree = this.profile.freeCases?.[targetCase.id] || 0;
+        reopenBtn.textContent = remFree > 0
+          ? `🎁 NOCHMAL GRATIS ÖFFNEN (${remFree}x)`
+          : `🔄 NOCHMAL ÖFFNEN (${targetCase.price} CR)`;
         reopenBtn.onclick = () => {
           modal.classList.add('hidden');
           this.startCaseUnboxing(targetCase);
@@ -1303,6 +1449,218 @@ class UIManager {
   }
 
   // ==========================================================================
+  // 5B. LEVEL PROGRESSION & EXCLUSIVE REWARDS ("🎖️ LEVEL-PFAD")
+  // ==========================================================================
+  claimLevelReward(levelNum, silent = false) {
+    const reward = (CS.LEVEL_REWARDS || []).find(r => r.level === levelNum);
+    if (!reward) return false;
+
+    const rankInfo = this.getRankInfo();
+    if (rankInfo.level < levelNum) {
+      if (!silent) this.showToast(`🔒 Erreiche zuerst Level ${levelNum} (${reward.minXP} XP)!`, 'error');
+      return false;
+    }
+
+    if (!Array.isArray(this.profile.claimedLevels)) this.profile.claimedLevels = [];
+    if (this.profile.claimedLevels.includes(levelNum)) {
+      // Already claimed — if it has a cosmetic, equip it right away!
+      if (reward.cosmetic) {
+        this.equipCosmetic(reward.cosmetic.type, reward.cosmetic.id);
+        this.renderCustomizer();
+        this.renderLevelsTab();
+      }
+      return false;
+    }
+
+    this.profile.claimedLevels.push(levelNum);
+
+    // 1. Grant Credits
+    if (reward.credits && reward.credits > 0) {
+      this.profile.credits += reward.credits;
+      const st = this.ensureStats();
+      st.totalCreditsEarned = (st.totalCreditsEarned || 0) + reward.credits;
+    }
+
+    // 2. Grant Free Case if included
+    if (reward.freeCaseId) {
+      if (!this.profile.freeCases) this.profile.freeCases = {};
+      this.profile.freeCases[reward.freeCaseId] = (this.profile.freeCases[reward.freeCaseId] || 0) + 1;
+    }
+
+    // 3. Grant Level-Exclusive Cosmetic & auto-equip
+    if (reward.cosmetic) {
+      const { type, id } = reward.cosmetic;
+      if (type === 'skin' && !this.profile.ownedSkins.includes(id)) {
+        this.profile.ownedSkins.push(id);
+      } else if (type === 'knife' && !this.profile.ownedKnives.includes(id)) {
+        this.profile.ownedKnives.push(id);
+      } else if (type === 'outfit' && !this.profile.ownedOutfits.includes(id)) {
+        this.profile.ownedOutfits.push(id);
+      } else if (type === 'glove' && !this.profile.ownedGloves.includes(id)) {
+        this.profile.ownedGloves.push(id);
+      }
+      this.equipCosmetic(type, id);
+    }
+
+    this.saveProfile();
+    this.renderCustomizer();
+    this.renderCasesTab();
+    this.renderLevelsTab();
+    this.renderStatsTab();
+
+    if (!silent) {
+      CS.audio.playUISound('unbox_win');
+      this.showToast(`🎉 Level ${levelNum} Belohnung abgeholt: ${reward.title}!`, 'gold');
+    }
+    return true;
+  }
+
+  claimAllLevelRewards() {
+    let claimedCount = 0;
+    (CS.LEVEL_REWARDS || []).forEach(r => {
+      if (this.claimLevelReward(r.level, true)) {
+        claimedCount++;
+      }
+    });
+    if (claimedCount > 0) {
+      CS.audio.playUISound('unbox_win');
+      this.showToast(`🎉 Alle ${claimedCount} verfügbaren Level-Belohnungen abgeholt & ausgerüstet!`, 'gold');
+    }
+  }
+
+  renderLevelsTab() {
+    const headerEl = document.getElementById('level-pass-header');
+    const gridEl = document.getElementById('level-rewards-grid');
+    if (!headerEl || !gridEl) return;
+
+    const rankInfo = this.getRankInfo();
+    const claimed = Array.isArray(this.profile.claimedLevels) ? this.profile.claimedLevels : [];
+    const unclaimedCount = this.getUnclaimedLevelCount();
+    const isMax = rankInfo.next === rankInfo.current;
+    const xpRemaining = isMax ? 0 : Math.max(0, rankInfo.next.minXP - this.profile.xp);
+
+    headerEl.innerHTML = `
+      <div class="level-pass-rank-hero">
+        <div class="level-pass-badge-circle">
+          <div style="font-size:24px;line-height:1;">${rankInfo.current.icon}</div>
+          <div style="font-size:10px;font-weight:900;color:#38bdf8;margin-top:2px;">LV.${rankInfo.level}</div>
+        </div>
+        <div style="flex:1;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <div style="font-size:18px;font-weight:900;color:#f8fafc;">
+              Level ${rankInfo.level}: <span style="color:#38bdf8;">${rankInfo.current.name}</span>
+            </div>
+            <div style="font-size:12px;font-weight:900;color:#fbbf24;">
+              ${this.profile.xp.toLocaleString('de-DE')} ${isMax ? 'XP (MAX LEVEL)' : `/ ${rankInfo.next.minXP.toLocaleString('de-DE')} XP`}
+            </div>
+          </div>
+          <div class="level-pass-xp-bar-outer">
+            <div class="level-pass-xp-bar-inner" style="width:${rankInfo.progress}%;"></div>
+          </div>
+          <div style="font-size:11.5px;color:#94a3b8;margin-top:5px;">
+            ${isMax
+              ? '🏆 Höchstes Prestige-Level erreicht! Du hast den kompletten Level-Pfad gemeistert.'
+              : `Noch <strong style="color:#f8fafc;">${xpRemaining.toLocaleString('de-DE')} XP</strong> bis <strong style="color:#fde047;">Level ${rankInfo.level + 1} (${rankInfo.next.icon} ${rankInfo.next.name})</strong>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="level-xp-rules-box">
+        <div style="font-weight:900;color:#fbbf24;margin-bottom:2px;">⚡ SO VERDIENST DU XP IN JEDEM SPIEL:</div>
+        <div>&bull; <strong>Runden-Sieg:</strong> +180 XP &nbsp;|&nbsp; <strong>Runden-Niederlage:</strong> +80 XP</div>
+        <div>&bull; <strong>Jeder eigene Kill:</strong> +45 XP &nbsp;|&nbsp; <strong>Kopfschuss-Bonus:</strong> +20 XP &nbsp;|&nbsp; <strong>Bombe:</strong> +50 XP</div>
+        <div style="color:#94a3b8;font-size:10.5px;">(Skaliert mit KI-Schwierigkeit: Leicht 0.75x &bull; Mittel 1.0x &bull; Schwer 1.35x &bull; Albtraum 2.0x)</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+        <button id="btn-claim-all-levels" class="level-claim-btn ${unclaimedCount > 0 ? 'btn-ready' : 'btn-locked'}" style="min-width:225px;padding:11px 16px;">
+          ${unclaimedCount > 0 ? `🎁 ALLE ${unclaimedCount} BELOHNUNGEN ABHOLEN!` : '✓ ALLE VERFÜGBAREN ABGEHOLT'}
+        </button>
+        <div style="font-size:11px;color:#94a3b8;">
+          Abgeholt: <strong style="color:#f8fafc;">${claimed.length} / ${(CS.LEVEL_REWARDS || []).length}</strong> Stufen
+        </div>
+      </div>
+    `;
+
+    const claimAllBtn = document.getElementById('btn-claim-all-levels');
+    if (claimAllBtn && unclaimedCount > 0) {
+      claimAllBtn.onclick = () => this.claimAllLevelRewards();
+    }
+
+    gridEl.innerHTML = (CS.LEVEL_REWARDS || []).map(r => {
+      const rankMeta = CS.RANKS[r.level] || { name: `Level ${r.level}`, icon: '🎖️' };
+      const isUnlocked = rankInfo.level >= r.level;
+      const isClaimed = claimed.includes(r.level);
+      const isClaimable = isUnlocked && !isClaimed;
+      const stateClass = isClaimable ? 'claimable' : (isClaimed ? 'claimed' : 'locked');
+
+      let previewImgUrl = '';
+      if (r.cosmetic) {
+        if (r.cosmetic.type === 'skin') {
+          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('skin', r.cosmetic.id, r.cosmetic.weapon || 'ak47');
+        } else if (r.cosmetic.type === 'knife') {
+          const kObj = CS.KNIFE_MODELS[r.cosmetic.id];
+          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('knife', r.cosmetic.id, kObj?.previewSkin || 'obsidian_prestige');
+        } else if (r.cosmetic.type === 'outfit') {
+          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('outfit', r.cosmetic.id);
+        } else if (r.cosmetic.type === 'glove') {
+          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('glove', r.cosmetic.id);
+        }
+      } else if (r.freeCaseId) {
+        previewImgUrl = CS.textures.getCosmeticPreviewDataURL('case', r.freeCaseId);
+      }
+
+      const bonusPills = [];
+      if (r.credits > 0) bonusPills.push(`<span class="level-bonus-pill">🪙 +${r.credits} CR</span>`);
+      if (r.freeCaseId) {
+        const cObj = CS.CASES.find(c => c.id === r.freeCaseId);
+        bonusPills.push(`<span class="level-bonus-pill" style="color:#4ade80;border-color:rgba(74,222,128,0.4);background:rgba(16,185,129,0.15);">📦 1x Gratis-Kiste (${cObj ? cObj.name.split(' ')[0] : 'Case'})</span>`);
+      }
+
+      let btnLabel = `🔒 AB LEVEL ${r.level} (${r.minXP} XP)`;
+      let btnClass = 'btn-locked';
+      if (isClaimable) {
+        btnLabel = '🎁 BELOHNUNG ABHOLEN!';
+        btnClass = 'btn-ready';
+      } else if (isClaimed) {
+        btnLabel = r.cosmetic ? '✓ ABGEHOLT (KLICKEN = AUSRÜSTEN)' : '✓ BELOHNUNG ABGEHOLT';
+        btnClass = 'btn-claimed';
+      }
+
+      return `
+        <div class="level-reward-card ${stateClass}">
+          <div>
+            <div class="level-card-top">
+              <span class="level-step-pill">${rankMeta.icon} LEVEL ${r.level}</span>
+              <span class="level-xp-req">${r.minXP.toLocaleString('de-DE')} XP</span>
+            </div>
+            <div class="level-preview-box" style="margin-top:8px;">
+              ${previewImgUrl ? `<img src="${previewImgUrl}" alt="${r.title}" />` : ''}
+              ${r.cosmetic ? `<span class="level-exclusive-tag">★ NUR LEVEL ${r.level}</span>` : `<span class="level-exclusive-tag" style="background:#0284c7;">CR + KISTE</span>`}
+            </div>
+            <div class="level-reward-title" style="margin-top:8px;">${r.title}</div>
+            <div class="level-reward-desc" style="margin-top:3px;">${r.subtitle}</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px;">
+            <div class="level-bonus-pills">${bonusPills.join('')}</div>
+            <button class="level-claim-btn ${btnClass}" data-claim-level="${r.level}">
+              ${btnLabel}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    gridEl.querySelectorAll('.level-claim-btn[data-claim-level]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const lvl = parseInt(btn.dataset.claimLevel, 10);
+        this.claimLevelReward(lvl, false);
+      });
+    });
+  }
+
+  // ==========================================================================
   // 5. CAREER & COMBAT STATISTICS TAB ("STATISTIKEN")
   // ==========================================================================
   renderStatsTab() {
@@ -1317,7 +1675,7 @@ class UIManager {
 
     if (rankIconEl) rankIconEl.textContent = rankInfo.current.icon;
     if (rankSubEl) {
-      rankSubEl.innerHTML = `${rankInfo.current.name} &bull; <strong>${this.profile.xp.toLocaleString('de-DE')} XP</strong> (${rankInfo.progress}% bis ${rankInfo.next.name})`;
+      rankSubEl.innerHTML = `Level ${rankInfo.level} (${rankInfo.current.name}) &bull; <strong>${this.profile.xp.toLocaleString('de-DE')} XP</strong> (${rankInfo.progress}% bis ${rankInfo.next.name})`;
     }
     if (nameInput && document.activeElement !== nameInput) {
       nameInput.value = this.profile.playerName || 'StrikeCommander';

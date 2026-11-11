@@ -453,6 +453,20 @@ class TacticalGame {
   }
 
   exitToLobby() {
+    // If leaving mid-round before endRound, still bank any XP earned from kills/objectives in the active round
+    if (this.running && this.roundPhase !== 'ended') {
+      const rKills = this.player.roundKills || 0;
+      const rHS = this.player.roundHeadshots || 0;
+      const rBomb = this.player.roundBombBonusXP || 0;
+      if (rKills > 0 || rBomb > 0) {
+        const partialXP = Math.round((rKills * 45 + rHS * 20 + rBomb) * this.getXPMultiplier());
+        CS.ui.addXP(partialXP);
+        this.player.roundKills = 0;
+        this.player.roundHeadshots = 0;
+        this.player.roundBombBonusXP = 0;
+      }
+    }
+
     this.running = false;
     this.paused = false;
     this.buyMenuOpen = false;
@@ -469,6 +483,7 @@ class TacticalGame {
     document.getElementById('lobby-screen')?.classList.remove('hidden');
 
     CS.ui.updateHeaderStats();
+    CS.ui.renderLevelsTab();
     CS.ui.renderStatsTab();
     CS.ui.rebuildLobbyShowcase();
   }
@@ -500,6 +515,8 @@ class TacticalGame {
     this.player.killerPos = null;
     this.player.spectateBotId = null;
     this.player.roundKills = 0;
+    this.player.roundHeadshots = 0;
+    this.player.roundBombBonusXP = 0;
     this.player.multiKillCount = 0;
     this.player.lastKillTime = 0;
     this.player.clutchSituation = 0;
@@ -617,8 +634,19 @@ class TacticalGame {
     const isPractice = this.currentMode === 'practice';
     const baseRoundCR = isPractice ? (playerWon ? 15 : 8) : (playerWon ? 35 : 15);
     let creditReward = Math.max(1, Math.round(baseRoundCR * this.getCreditMultiplier()));
-    const xpReward = Math.max(10, Math.round((playerWon ? 150 : 80) * this.getXPMultiplier()));
     const diffData = this.getDifficultyData();
+    const xpMult = this.getXPMultiplier();
+
+    // Calculate Match/Round XP based on Win/Loss + Player Kills + Headshots + Bomb Objective
+    const prevRank = CS.ui.getRankInfo();
+    const rKills = this.player.roundKills || 0;
+    const rHS = this.player.roundHeadshots || 0;
+    const rBombXP = this.player.roundBombBonusXP || 0;
+    const baseOutcomeXP = isPractice ? (playerWon ? 60 : 35) : (playerWon ? 180 : 80);
+    const baseKillsXP = rKills * 45;
+    const baseHSXP = rHS * 20;
+    const rawTotalXP = baseOutcomeXP + baseKillsXP + baseHSXP + rBombXP;
+    const xpReward = Math.max(15, Math.round(rawTotalXP * xpMult));
 
     // Award Clutch Bonus if player won a 1v2+ situation in Bomb mode!
     if (playerWon && !this.player.dead && this.currentMode === 'bomb' && (this.player.clutchSituation || 0) >= 2) {
@@ -635,6 +663,12 @@ class TacticalGame {
 
     CS.ui.addCredits(creditReward, `${playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen'} (${diffData.name} • ${diffData.badge})`);
     CS.ui.addXP(xpReward);
+    const newRank = CS.ui.getRankInfo();
+    const leveledUp = newRank.level > prevRank.level;
+    if (leveledUp) {
+      CS.audio.playUISound('unbox_win');
+      CS.ui.showToast(`🎉 LEVEL AUFSTIEG AUF LEVEL ${newRank.level} (${newRank.current.name})! Neue Belohnung im LEVEL-PFAD!`, 'gold');
+    }
 
     CS.audio.announce(winningTeam === 'CT' ? 'Counter-Terrorists Win' : 'Terrorists Win');
 
@@ -651,8 +685,53 @@ class TacticalGame {
     }
     if (reasonEl) reasonEl.textContent = `${reasonText} (+$${roundMoneyBonus} Match-Geld • KI: ${diffData.name})`;
     if (scoreEl) scoreEl.textContent = `CT ${this.scores.CT} : ${this.scores.T} T`;
-    if (kdEl) kdEl.textContent = `${this.player.kills} / ${this.player.deaths}`;
+    if (kdEl) kdEl.textContent = `${rKills} (${this.player.kills} Ges.) / ${this.player.deaths}`;
     if (crEl) crEl.textContent = `+${creditReward} CR (${diffData.creditMult}x)`;
+
+    // Populate XP Breakdown & Level Progress in Round-End Modal
+    const xpRankLabel = document.getElementById('round-end-rank-label');
+    const xpTotalEl = document.getElementById('round-end-xp-total');
+    const xpBreakEl = document.getElementById('round-end-xp-breakdown');
+    const xpFillEl = document.getElementById('round-end-xp-fill');
+    const xpSubEl = document.getElementById('round-end-xp-sub');
+    const lvlBannerEl = document.getElementById('round-end-levelup-banner');
+
+    if (xpRankLabel) {
+      xpRankLabel.textContent = `${newRank.current.icon} Level ${newRank.level} • ${newRank.current.name}`;
+    }
+    if (xpTotalEl) {
+      xpTotalEl.textContent = `+${xpReward} XP (${xpMult}x)`;
+    }
+    if (xpBreakEl) {
+      const parts = [
+        `${playerWon ? '🏆 Sieg' : '⚔️ Einsatz'}: +${baseOutcomeXP} XP`,
+        `🎯 Kills (${rKills}): +${baseKillsXP} XP`
+      ];
+      if (rHS > 0) parts.push(`💀 Kopfschüsse (${rHS}): +${baseHSXP} XP`);
+      if (rBombXP > 0) parts.push(`💣 Bombe: +${rBombXP} XP`);
+      xpBreakEl.innerHTML = parts.join(' &bull; ');
+    }
+    if (xpFillEl) {
+      xpFillEl.style.width = `${newRank.progress}%`;
+    }
+    if (xpSubEl) {
+      if (newRank.next === newRank.current) {
+        xpSubEl.textContent = `${CS.ui.profile.xp.toLocaleString('de-DE')} XP • MAX LEVEL ERREICHT!`;
+      } else {
+        xpSubEl.textContent = `${CS.ui.profile.xp.toLocaleString('de-DE')} / ${newRank.next.minXP.toLocaleString('de-DE')} XP (${newRank.progress}% bis Level ${newRank.level + 1})`;
+      }
+    }
+    if (lvlBannerEl) {
+      if (leveledUp) {
+        const rewardObj = (CS.LEVEL_REWARDS || []).find(r => r.level === newRank.level);
+        lvlBannerEl.textContent = rewardObj
+          ? `🎉 LEVEL ${newRank.level} ERREICHT! "${rewardObj.title}" im 🎖️ LEVEL-PFAD abholbereit!`
+          : `🎉 LEVEL ${newRank.level} ERREICHT! Neue Belohnung im 🎖️ LEVEL-PFAD abholbereit!`;
+        lvlBannerEl.classList.remove('hidden');
+      } else {
+        lvlBannerEl.classList.add('hidden');
+      }
+    }
 
     this.updateHUD();
     document.getElementById('round-end-overlay')?.classList.remove('hidden');
@@ -1276,6 +1355,7 @@ class TacticalGame {
     this.roundPhase = 'planted';
     if (planterName === CS.ui.profile.playerName) {
       CS.ui.recordMedal('bombsPlanted');
+      this.player.roundBombBonusXP = (this.player.roundBombBonusXP || 0) + 50;
     }
     CS.audio.announce('The bomb has been planted');
     this.showBanner(`⚠️ BOMBE PLATZIERT AUF ${siteName}!`, `${planterName} hat das C4 scharf gemacht (40s Countdown)`);
@@ -1293,6 +1373,7 @@ class TacticalGame {
     }
     if (defuserName === CS.ui.profile.playerName) {
       CS.ui.recordMedal('bombsDefused');
+      this.player.roundBombBonusXP = (this.player.roundBombBonusXP || 0) + 50;
     }
     if (this.player.team === 'CT') {
       const defuseCR = Math.round(150 * this.getCreditMultiplier());
@@ -1435,10 +1516,11 @@ class TacticalGame {
       if (isPlayerKiller && !isPlayerVictim) {
         const baseKillCR = isHeadshot ? 75 : 50;
         const crBonus = Math.max(5, Math.round(baseKillCR * this.getCreditMultiplier()));
-        const xpBonus = Math.max(10, Math.round(40 * this.getXPMultiplier()));
         const diffData = this.getDifficultyData();
         CS.ui.addCredits(crBonus, `${isHeadshot ? '🎯 Kopfschuss-Kill!' : 'Gegner eliminiert'} (${diffData.name})`);
-        CS.ui.addXP(xpBonus);
+        if (isHeadshot) {
+          this.player.roundHeadshots = (this.player.roundHeadshots || 0) + 1;
+        }
 
         // Track Round Kills & Multi-Kill Streaks (First Blood, Double Kill -> ACE!)
         this.handlePlayerKillStreak(isHeadshot);
@@ -2005,6 +2087,11 @@ class TacticalGame {
     this.shellCasings.push({
       mesh,
       vel: rightDir.multiplyScalar(speed).addScaledVector(this.player.velocity, 0.4),
+      rotVel: new THREE.Vector3(
+        (Math.random() - 0.5) * 18,
+        (Math.random() - 0.5) * 18,
+        (Math.random() - 0.5) * 18
+      ),
       bounced: false,
       timer: 2.2
     });
@@ -2551,9 +2638,9 @@ class TacticalGame {
 
         // If player already has a weapon in that slot, drop/swap it onto the ground
         if (oldSlotData) {
+          const oldSkinId = oldSlotData.skinId || CS.ui.profile.weaponSkins[oldSlotData.id] || 'default';
           const dropDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.yaw);
-          const dropPos = this.player.position.clone().addScaledVector(dropDir, 1.35);
-          this.spawnDroppedWeapon(oldSlotData, dropPos, oldSlotData.skinId);
+          this.spawnDroppedWeapon(oldSlotData.id, oldSkinId, this.player.position, oldSlotData, dropDir);
         }
 
         this.player.slots[targetSlot] = dItem.itemData;
@@ -2823,16 +2910,18 @@ class TacticalGame {
       c.timer -= dt;
       c.vel.y -= 16.5 * dt;
       c.mesh.position.addScaledVector(c.vel, dt);
-      c.mesh.rotation.x += c.rotVel.x * dt;
-      c.mesh.rotation.y += c.rotVel.y * dt;
-      c.mesh.rotation.z += c.rotVel.z * dt;
+      if (c.rotVel) {
+        c.mesh.rotation.x += c.rotVel.x * dt;
+        c.mesh.rotation.y += c.rotVel.y * dt;
+        c.mesh.rotation.z += c.rotVel.z * dt;
+      }
 
       if (c.mesh.position.y <= groundRefY) {
         c.mesh.position.y = groundRefY;
         c.vel.y *= -0.38;
         c.vel.x *= 0.65;
         c.vel.z *= 0.65;
-        c.rotVel.multiplyScalar(0.5);
+        if (c.rotVel) c.rotVel.multiplyScalar(0.5);
         if (!c.bounced) {
           c.bounced = true;
           CS.audio.playShellClink();
@@ -2887,8 +2976,8 @@ class TacticalGame {
       const p = this.player.drawTimer / 0.36;
       posY -= p * 0.22;
       rotX -= p * 0.65;
-      if (ud.weaponId === 'knife' && ud.knifeModelId === 'knife_karambit') {
-        rotX += p * Math.PI * 2; // Karambit finger spin on draw!
+      if (ud.weaponId === 'knife' && (ud.knifeModelId === 'knife_karambit' || ud.knifeModelId === 'knife_talon')) {
+        rotX += p * Math.PI * 2; // Karambit / Talon finger spin on draw!
       }
     }
 
@@ -2917,8 +3006,8 @@ class TacticalGame {
     // 3. [F] Key Weapon / Knife Inspect Animation!
     if (this.player.inspectTimer > 0) {
       const p = 1 - (this.player.inspectTimer / 2.6);
-      if (ud.weaponId === 'knife' && (ud.knifeModelId === 'knife_karambit' || ud.knifeModelId === 'knife_butterfly')) {
-        // Spin Karambit / Flip Butterfly Knife!
+      if (ud.weaponId === 'knife' && (ud.knifeModelId === 'knife_karambit' || ud.knifeModelId === 'knife_talon' || ud.knifeModelId === 'knife_butterfly')) {
+        // Spin Karambit / Talon / Flip Butterfly Knife!
         rotX += Math.sin(p * Math.PI * 2) * Math.PI;
         rotZ += Math.sin(p * Math.PI) * 0.45;
       } else {

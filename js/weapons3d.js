@@ -25,22 +25,30 @@ class WeaponModelBuilder {
       const kGroup = new THREE.Group();
       const bladeMat = skinId === 'default' ? chromeMat : skinMat;
 
-      if (knifeModelId === 'knife_karambit') {
+      if (knifeModelId === 'knife_karambit' || knifeModelId === 'knife_talon') {
+        const isTalon = knifeModelId === 'knife_talon';
+        const handleMat = isTalon
+          ? new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35, metalness: 0.15 })
+          : darkMat;
+        const ringMat = isTalon
+          ? new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.25, metalness: 0.85 })
+          : darkMat;
+
         // Finger ring
         const ringGeo = new THREE.TorusGeometry(0.022, 0.0055, 10, 24);
-        const ring = new THREE.Mesh(ringGeo, darkMat);
+        const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.position.set(0, -0.08, 0.05);
         ring.rotation.y = Math.PI / 2;
         kGroup.add(ring);
 
         // Curved ergonomic grip
         const gripGeo = new THREE.BoxGeometry(0.018, 0.085, 0.028);
-        const grip = new THREE.Mesh(gripGeo, darkMat);
+        const grip = new THREE.Mesh(gripGeo, handleMat);
         grip.position.set(0, -0.025, 0.02);
         grip.rotation.x = 0.25;
         kGroup.add(grip);
 
-        // Curved Karambit claw blade (multi-segment curve)
+        // Curved Karambit / Talon claw blade (multi-segment curve)
         const clawGroup = new THREE.Group();
         for (let i = 0; i < 6; i++) {
           const segW = 0.028 * (1 - i * 0.13);
@@ -753,14 +761,27 @@ class WeaponModelBuilder {
       rightHandTarget.set(0.012, -0.055, 0.03);
     }
 
-    // --- FIRST-PERSON HANDS & GLOVES ---
+    // --- FIRST-PERSON HANDS, GLOVES & OUTFIT-SPECIFIC FOREARM ARMOR ---
     let leftArmGroup = null;
     let rightArmGroup = null;
     if (includeHands) {
       const gloveData = CS.GLOVES[gloveId] || CS.GLOVES.gloves_default;
       const outfitData = CS.AGENT_OUTFITS[outfitId] || CS.AGENT_OUTFITS.sas_navy;
 
-      const sleeveMat = new THREE.MeshStandardMaterial({ color: outfitData.suitColor, roughness: 0.72, metalness: 0.15 });
+      const sleeveMat = new THREE.MeshStandardMaterial({ color: outfitData.suitColor, roughness: 0.68, metalness: 0.18 });
+      const vestArmorMat = new THREE.MeshStandardMaterial({ color: outfitData.vestColor, roughness: 0.42, metalness: 0.45 });
+      const accentArmorMat = new THREE.MeshStandardMaterial({
+        color: outfitData.accentColor,
+        roughness: (outfitId === 'gold_commander' || outfitId === 'valkyrie_prime') ? 0.18 : 0.35,
+        metalness: (outfitId === 'gold_commander' || outfitId === 'valkyrie_prime') ? 0.92 : 0.55
+      });
+      const visorGlowMat = new THREE.MeshStandardMaterial({
+        color: outfitData.visorColor,
+        emissive: outfitData.visorColor,
+        emissiveIntensity: 0.6,
+        roughness: 0.15,
+        metalness: 0.85
+      });
       const gloveBaseMat = new THREE.MeshStandardMaterial({ color: gloveData.primary, roughness: 0.55, metalness: 0.25 });
       const gloveAccentMat = new THREE.MeshStandardMaterial({ color: gloveData.secondary, roughness: 0.4, metalness: 0.45 });
       const knuckleMat = new THREE.MeshStandardMaterial({ color: gloveData.accent, roughness: 0.3, metalness: 0.65 });
@@ -781,12 +802,101 @@ class WeaponModelBuilder {
         const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.028, 0.038), gloveBaseMat);
         fingers.position.set(0, -0.004, -0.045);
         hGroup.add(fingers);
-        // Forearm tactical sleeve
-        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.042, 0.28, 10), sleeveMat);
-        arm.rotation.x = Math.PI / 2 - 0.22;
-        arm.rotation.z = isLeft ? -0.26 : 0.18;
-        arm.position.set(isLeft ? -0.04 : 0.03, -0.03, 0.16);
-        hGroup.add(arm);
+
+        // Forearm assembly pivot (matches sleeve angle)
+        const sleevePivot = new THREE.Group();
+        sleevePivot.position.set(isLeft ? -0.04 : 0.03, -0.03, 0.16);
+        sleevePivot.rotation.x = Math.PI / 2 - 0.22;
+        sleevePivot.rotation.z = isLeft ? -0.26 : 0.18;
+
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.043, 0.28, 12), sleeveMat);
+        sleevePivot.add(arm);
+
+        // Outfit-specific 3D forearm bracers, watches, spikes & neon conduits!
+        if (outfitId === 'sas_navy') {
+          const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.037, 0.04, 12), vestArmorMat);
+          cuff.position.y = -0.10;
+          sleevePivot.add(cuff);
+          if (isLeft) {
+            const watchFace = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.012, 12), visorGlowMat);
+            watchFace.rotation.x = Math.PI / 2;
+            watchFace.position.set(0.01, -0.095, 0.034);
+            sleevePivot.add(watchFace);
+          }
+        } else if (outfitId === 'gign_urban') {
+          // Heavy Riot Forearm Shield Plate + Yellow Trim
+          const riotPlate = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.18, 0.028), vestArmorMat);
+          riotPlate.position.set(0, -0.02, 0.032);
+          sleevePivot.add(riotPlate);
+          const riotStripe = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.032, 0.03), accentArmorMat);
+          riotStripe.position.set(0, -0.08, 0.032);
+          sleevePivot.add(riotStripe);
+        } else if (outfitId === 'desert_seal') {
+          // Wrapped Desert Bandage/Paracord Rings + Green Tactical GPS
+          [-0.08, -0.03, 0.02].forEach(ry => {
+            const wrapRing = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.039, 0.026, 12), vestArmorMat);
+            wrapRing.position.y = ry;
+            sleevePivot.add(wrapRing);
+          });
+          if (isLeft) {
+            const gpsScreen = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.048, 0.014), visorGlowMat);
+            gpsScreen.position.set(0, -0.06, 0.038);
+            sleevePivot.add(gpsScreen);
+          }
+        } else if (outfitId === 'phoenix_crimson') {
+          // Crimson Mercenary Bracer + Metallic Wrist Spikes
+          const mercBracer = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.044, 0.15, 10), accentArmorMat);
+          mercBracer.position.y = -0.03;
+          sleevePivot.add(mercBracer);
+          [-0.06, 0.0].forEach(sy => {
+            const spike = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.038, 6), chromeMat);
+            spike.rotation.x = Math.PI / 2;
+            spike.position.set(0, sy, 0.052);
+            sleevePivot.add(spike);
+          });
+        } else if (outfitId === 'cyber_spectre') {
+          // Segmented Carbon Cyber-Vambrace + Glowing Cyan & Magenta Neon Energy Strips
+          const cyberPlate = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.19, 0.024), vestArmorMat);
+          cyberPlate.position.set(0, -0.02, 0.032);
+          sleevePivot.add(cyberPlate);
+          const neonLine = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.028), visorGlowMat);
+          neonLine.position.set(0, -0.02, 0.034);
+          sleevePivot.add(neonLine);
+          const magRing = new THREE.Mesh(new THREE.CylinderGeometry(0.039, 0.039, 0.022, 12), accentArmorMat);
+          magRing.position.y = -0.095;
+          sleevePivot.add(magRing);
+        } else if (outfitId === 'gold_commander') {
+          // Royal 24k Gold Engraved Cuff + Fluted Gauntlet Plate
+          const goldCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.041, 0.065, 12), accentArmorMat);
+          goldCuff.position.y = -0.08;
+          sleevePivot.add(goldCuff);
+          const goldCrest = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.16, 0.022), accentArmorMat);
+          goldCrest.position.set(0, -0.02, 0.034);
+          sleevePivot.add(goldCrest);
+        } else if (outfitId === 'ghost_recon') {
+          // Stealth Cloak Shroud + Glowing Violet Sonar Wrist Node
+          const stealthBracer = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.17, 0.024), vestArmorMat);
+          stealthBracer.position.set(0, -0.02, 0.032);
+          sleevePivot.add(stealthBracer);
+          [-0.07, -0.02, 0.03].forEach(ny => {
+            const vDot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), visorGlowMat);
+            vDot.position.set(0, ny, 0.044);
+            sleevePivot.add(vDot);
+          });
+        } else if (outfitId === 'valkyrie_prime') {
+          // White-Ceramic & 24k Gold Winged Paladin Vambrace + Cyan Energy Core
+          const paladinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.18, 0.026), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25, metalness: 0.5 }));
+          paladinGuard.position.set(0, -0.02, 0.032);
+          sleevePivot.add(paladinGuard);
+          const goldWing = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.04, 0.030), accentArmorMat);
+          goldWing.position.set(0, -0.08, 0.033);
+          sleevePivot.add(goldWing);
+          const cyanGem = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.08, 0.030), visorGlowMat);
+          cyanGem.position.set(0, -0.01, 0.034);
+          sleevePivot.add(cyanGem);
+        }
+
+        hGroup.add(sleevePivot);
         return hGroup;
       };
 

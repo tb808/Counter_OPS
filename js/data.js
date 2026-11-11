@@ -312,6 +312,36 @@ CS.SKINS = {
     primary: '#ffcc33', secondary: '#996515', accent: '#fff2b2',
     metalness: 0.98, roughness: 0.10, pattern: 'gold_engraved', previewWeapon: 'ak47',
     desc: '24-Karat vergoldetes Gehäuse mit feinsten floralen Gravuren.'
+  },
+
+  // --- LEVEL-EXKLUSIVE SKINS (NICHT IM SHOP ODER KISTEN ERHÄLTLICH!) ---
+  veteran_stripe: {
+    id: 'veteran_stripe', name: '★ Veteran Tiger (Lv.1 Exklusiv)', rarity: 'restricted', price: 0,
+    levelExclusive: true, unlockLevel: 1,
+    primary: '#f59e0b', secondary: '#18181b', accent: '#fbbf24',
+    metalness: 0.68, roughness: 0.28, pattern: 'tiger_stripe', previewWeapon: 'm4a4',
+    desc: 'Exklusive Belohnung für Level 1: Aggressives Schwarz-Gold-Tigerstreifen-Tarnmuster.'
+  },
+  ruby_doppler: {
+    id: 'ruby_doppler', name: '★ Doppler Ruby (Lv.4 Exklusiv)', rarity: 'covert', price: 0,
+    levelExclusive: true, unlockLevel: 4,
+    primary: '#e11d48', secondary: '#4c0519', accent: '#fda4af',
+    metalness: 0.95, roughness: 0.12, pattern: 'ruby_crystal', previewWeapon: 'ak47',
+    desc: 'Exklusive Belohnung für Level 4: Flüssig glänzendes, tiefrotes Rubin-Kristall-Finish.'
+  },
+  sapphire_galaxy: {
+    id: 'sapphire_galaxy', name: '★ Sapphire Starlight (Lv.7 Exklusiv)', rarity: 'covert', price: 0,
+    levelExclusive: true, unlockLevel: 7,
+    primary: '#2563eb', secondary: '#090d16', accent: '#38bdf8',
+    metalness: 0.94, roughness: 0.14, pattern: 'sapphire_nebula', previewWeapon: 'awp',
+    desc: 'Exklusive Belohnung für Level 7: Kosmischer Saphir-Nebel mit funkelnden Sternenpartikeln.'
+  },
+  obsidian_prestige: {
+    id: 'obsidian_prestige', name: '★ Obsidian Lightning (Lv.9 Exklusiv)', rarity: 'gold', price: 0,
+    levelExclusive: true, unlockLevel: 9,
+    primary: '#090d16', secondary: '#1e1b4b', accent: '#fbbf24',
+    metalness: 0.96, roughness: 0.11, pattern: 'obsidian_lightning', previewWeapon: 'deagle',
+    desc: 'Exklusive Belohnung für Level 9: Vulkanschwarzes Obsidian-Gehäuse durchzogen von 24k Gold-Blitzen.'
   }
 };
 
@@ -332,6 +362,11 @@ CS.KNIFE_MODELS = {
   knife_karambit: {
     id: 'knife_karambit', name: '★ Karambit', rarity: 'gold', price: 3200, previewSkin: 'emerald_doppler',
     desc: 'Geschwungene Tigerkralle mit Fingerring. Rotiert beim Ziehen und Inspizieren [F] um den Zeigefinger!'
+  },
+  knife_talon: {
+    id: 'knife_talon', name: '★ Talon Knife | Prestige (Lv.10 Exklusiv)', rarity: 'gold', price: 0,
+    levelExclusive: true, unlockLevel: 10, previewSkin: 'obsidian_prestige',
+    desc: 'Exklusive Global-Elite-Belohnung für Level 10: Gezahnte Tigerkralle mit Elfenbeingriff, Messingnieten & Finger-Spin [F]!'
   }
 };
 
@@ -340,32 +375,52 @@ CS.AGENT_OUTFITS = {
   sas_navy: {
     id: 'sas_navy', name: 'SAS Midnight Tactical', price: 0, rarity: 'milspec',
     suitColor: '#1f2937', vestColor: '#111827', helmetColor: '#1e293b', visorColor: '#38bdf8',
-    accentColor: '#0284c7', desc: 'Klassische nachtblaue Spezialeinheits-Uniform mit verspiegeltem Visier.'
+    accentColor: '#0284c7',
+    desc: 'Britische SAS-Kommandomontur mit S10-Atemschutzmaske (Doppelglas-Linsen & Seitenfilter), Funkgerät und Blendgranaten-Brustgurt.'
   },
   gign_urban: {
     id: 'gign_urban', name: 'GIGN Riot Specialist', price: 450, rarity: 'restricted',
     suitColor: '#334155', vestColor: '#1e293b', helmetColor: '#0f172a', visorColor: '#facc15',
-    accentColor: '#eab308', desc: 'Schwer gepanzerter Anti-Terror-Anzug mit goldenem Ballistik-Visier.'
+    accentColor: '#eab308',
+    desc: 'Schwerer Juggernaut-Breacher mit Altyn-Titanhelm, klappbarem Gold-Panoramavisier, 360°-Halskrause, Unterleibspanzer & Schrotpatronen-Gurt.'
   },
   desert_seal: {
     id: 'desert_seal', name: 'SEAL Sandstorm Ops', price: 500, rarity: 'restricted',
     suitColor: '#a88b60', vestColor: '#6b5638', helmetColor: '#856d47', visorColor: '#10b981',
-    accentColor: '#d97706', desc: 'Wüsten-Einsatzanzug mit taktischem Nachtsicht-Grünvisier.'
+    accentColor: '#d97706',
+    desc: 'Wüsten-Spezialeinheit mit 4-fach Panorama-Nachtsichtgerät (GPNVG-18), gewebtem Shemagh-Halstuch und Langstrecken-Doppelantennen-Funkrucksack.'
   },
   phoenix_crimson: {
     id: 'phoenix_crimson', name: 'Phoenix Enforcer', price: 850, rarity: 'classified',
     suitColor: '#27171c', vestColor: '#450a0a', helmetColor: '#18181b', visorColor: '#ef4444',
-    accentColor: '#dc2626', desc: 'Karmesinrote Elite-Kampfmontur mit rot glühendem Taktik-Visier.'
+    accentColor: '#dc2626',
+    desc: 'Schwere Söldner-Sturmrüstung mit ballistischer Totenkopf-Maske, rotem Kommando-Barett, gekreuztem MG-Patronengurt und Stachel-Schulterplatten.'
   },
   cyber_spectre: {
     id: 'cyber_spectre', name: 'Cyber Spectre Neon', price: 1400, rarity: 'covert',
     suitColor: '#090d16', vestColor: '#1e1b4b', helmetColor: '#0f172a', visorColor: '#00f0ff',
-    accentColor: '#ec4899', desc: 'Futuristischer Stealth-Kampfanzug mit leuchtenden Cyan/Magenta-Aktzenten.'
+    accentColor: '#ec4899',
+    desc: 'Futuristischer Cyber-Exosuit mit V-Laser-Visier, leuchtenden Magenta-Datenfinne, Brust-Energiereaktor und Zwillings-Schubdüsen am Rücken.'
   },
   gold_commander: {
     id: 'gold_commander', name: '★ Global Elite Commander', price: 2600, rarity: 'gold',
     suitColor: '#141416', vestColor: '#292524', helmetColor: '#1c1917', visorColor: '#ffd700',
-    accentColor: '#ffd700', desc: 'Exklusive Schwarz-Gold-Kommandantenrüstung für wahre Champions.'
+    accentColor: '#ffd700',
+    desc: 'Prunkvolle 24k-Gold-Kommandantenrüstung mit Lorbeer-Helmkrone, geprägtem Goldadler-Brustharnisch, Epauletten und Kommandanten-Umhang.'
+  },
+  ghost_recon: {
+    id: 'ghost_recon', name: '★ Ghost Phantom (Lv.3 Exklusiv)', price: 0, rarity: 'classified',
+    levelExclusive: true, unlockLevel: 3,
+    suitColor: '#090d16', vestColor: '#18181b', helmetColor: '#090d16', visorColor: '#a855f7',
+    accentColor: '#9333ea',
+    desc: 'Exklusive Level-3-Belohnung: Scharfschützen-Kapuzenmantel mit Phantom-Schädelmaske, 3-linsigem Violett-Sonargerät und Tarn-Umhang.'
+  },
+  valkyrie_prime: {
+    id: 'valkyrie_prime', name: '★ Prime Titan Enforcer (Lv.8 Exklusiv)', price: 0, rarity: 'gold',
+    levelExclusive: true, unlockLevel: 8,
+    suitColor: '#e2e8f0', vestColor: '#1e293b', helmetColor: '#f8fafc', visorColor: '#00f0ff',
+    accentColor: '#fbbf24',
+    desc: 'Exklusive Level-8-Belohnung: Reinweiße Walküren-Titanrüstung mit goldenen Helmflügeln, Cyan-Diamantkern und 4 Energie-Schwingen am Rücken.'
   }
 };
 
@@ -390,6 +445,11 @@ CS.GLOVES = {
   gloves_gold: {
     id: 'gloves_gold', name: '★ Omega Gloves | Imperial Gold', price: 2200, rarity: 'gold',
     primary: '#1c1917', secondary: '#d97706', accent: '#ffd700'
+  },
+  gloves_cobalt: {
+    id: 'gloves_cobalt', name: '★ Amphibious Gloves | Cyber Cobalt (Lv.5 Exklusiv)', price: 0, rarity: 'covert',
+    levelExclusive: true, unlockLevel: 5,
+    primary: '#0c1c3d', secondary: '#1d4ed8', accent: '#00f0ff'
   }
 };
 
@@ -725,15 +785,111 @@ CS.MODES = {
   }
 };
 
-// --- RANKS ---
+// --- RANKS & 10-STAGE LEVEL PROGRESSION ---
 CS.RANKS = [
-  { name: 'Silver I', minXP: 0, icon: '🥈' },
-  { name: 'Silver Elite', minXP: 300, icon: '🥈' },
-  { name: 'Gold Nova I', minXP: 700, icon: '⭐' },
-  { name: 'Gold Nova Master', minXP: 1300, icon: '🌟' },
-  { name: 'Master Guardian', minXP: 2100, icon: '🛡️' },
-  { name: 'Distinguished Master Guardian', minXP: 3200, icon: '🎖️' },
-  { name: 'Legendary Eagle', minXP: 4600, icon: '🦅' },
-  { name: 'Supreme Master First Class', minXP: 6500, icon: '👑' },
-  { name: 'The Global Elite', minXP: 9000, icon: '🌐' }
+  { level: 0,  name: 'Silver I',                      minXP: 0,    icon: '🥈' },
+  { level: 1,  name: 'Silver II',                     minXP: 300,  icon: '🥈' },
+  { level: 2,  name: 'Silver Elite',                  minXP: 700,  icon: '🥈' },
+  { level: 3,  name: 'Gold Nova I',                   minXP: 1200, icon: '⭐' },
+  { level: 4,  name: 'Gold Nova Master',              minXP: 1850, icon: '🌟' },
+  { level: 5,  name: 'Master Guardian I',             minXP: 2650, icon: '🛡️' },
+  { level: 6,  name: 'Master Guardian Elite',         minXP: 3600, icon: '⚔️' },
+  { level: 7,  name: 'Distinguished Master Guardian', minXP: 4750, icon: '🎖️' },
+  { level: 8,  name: 'Legendary Eagle',               minXP: 6100, icon: '🦅' },
+  { level: 9,  name: 'Supreme Master First Class',    minXP: 7700, icon: '👑' },
+  { level: 10, name: 'The Global Elite',              minXP: 9600, icon: '🌐' }
+];
+
+// --- LEVEL-UP EXCLUSIVE REWARDS (NUR DURCH LEVEL-AUFSTIEG FREISCHALTBAR!) ---
+CS.LEVEL_REWARDS = [
+  {
+    level: 1,
+    title: '★ Veteran Tiger (Waffen-Skin) + 200 CR',
+    desc: 'Exklusiver Schwarz-Gold-Tigerstreifen-Skin für alle Waffen + 200 Start-Credits.',
+    rarity: 'restricted',
+    cosmetic: { type: 'skin', id: 'veteran_stripe', weaponPreview: 'm4a4' },
+    credits: 200,
+    freeCaseId: null
+  },
+  {
+    level: 2,
+    title: '400 Credits + 1x Gratis Sandstorm-Kiste',
+    desc: 'Großes Einsatz-Soldpaket (+400 CR) plus eine kostenlose Operation Sandstorm Kiste zum Öffnen!',
+    rarity: 'classified',
+    cosmetic: null,
+    credits: 400,
+    freeCaseId: 'case_sandstorm'
+  },
+  {
+    level: 3,
+    title: '★ Ghost Phantom (Agenten-Outfit) + 250 CR',
+    desc: 'Exklusiver Stealth-Kampfanzug mit leuchtend violettem Nachtsicht-Visier + 250 Credits.',
+    rarity: 'classified',
+    cosmetic: { type: 'outfit', id: 'ghost_recon' },
+    credits: 250,
+    freeCaseId: null
+  },
+  {
+    level: 4,
+    title: '★ Doppler Ruby (Waffen-Skin) + 350 CR',
+    desc: 'Exklusives, flüssig glänzendes Rubin-Kristall-Finish für alle Waffen + 350 Credits.',
+    rarity: 'covert',
+    cosmetic: { type: 'skin', id: 'ruby_doppler', weaponPreview: 'ak47' },
+    credits: 350,
+    freeCaseId: null
+  },
+  {
+    level: 5,
+    title: '★ Amphibious Gloves | Cyber Cobalt + 450 CR',
+    desc: 'Exklusive kobaltblaue Carbon-Taktikhandschuhe für Ego- & Agenten-Ansicht + 450 Credits.',
+    rarity: 'covert',
+    cosmetic: { type: 'glove', id: 'gloves_cobalt' },
+    credits: 450,
+    freeCaseId: null
+  },
+  {
+    level: 6,
+    title: '650 Credits + 1x Gratis Cyber Strike Kiste',
+    desc: 'Massiver Sold-Bonus (+650 CR) plus eine kostenlose Neon Cyber Strike Kiste!',
+    rarity: 'covert',
+    cosmetic: null,
+    credits: 650,
+    freeCaseId: 'case_cyber'
+  },
+  {
+    level: 7,
+    title: '★ Sapphire Starlight (Waffen-Skin) + 550 CR',
+    desc: 'Exklusives kosmisches Saphir-Nebel-Finish mit Sternenpartikeln + 550 Credits.',
+    rarity: 'covert',
+    cosmetic: { type: 'skin', id: 'sapphire_galaxy', weaponPreview: 'awp' },
+    credits: 550,
+    freeCaseId: null
+  },
+  {
+    level: 8,
+    title: '★ Prime Titan Enforcer (Agenten-Outfit) + 700 CR',
+    desc: 'Exklusive weiß-goldene Titan-Kommandantenrüstung mit Cyan-Visier + 700 Credits.',
+    rarity: 'gold',
+    cosmetic: { type: 'outfit', id: 'valkyrie_prime' },
+    credits: 700,
+    freeCaseId: null
+  },
+  {
+    level: 9,
+    title: '★ Obsidian Lightning (Waffen-Skin) + 900 CR',
+    desc: 'Exklusives vulkanschwarzes Obsidian-Gehäuse mit 24k Gold-Blitzen + 900 Credits.',
+    rarity: 'gold',
+    cosmetic: { type: 'skin', id: 'obsidian_prestige', weaponPreview: 'deagle' },
+    credits: 900,
+    freeCaseId: null
+  },
+  {
+    level: 10,
+    title: '★ Talon Knife | Prestige + 1.500 CR + Legend-Kiste',
+    desc: 'Ultimative Global-Elite-Belohnung: Exklusives ★ Talon Knife mit Finger-Spin [F], +1.500 CR & 1x Global Legend Tresorkiste!',
+    rarity: 'gold',
+    cosmetic: { type: 'knife', id: 'knife_talon' },
+    credits: 1500,
+    freeCaseId: 'case_legend'
+  }
 ];

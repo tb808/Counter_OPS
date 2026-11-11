@@ -11,6 +11,7 @@ CS.BOT_NAMES = [
 // Build an articulated 3D Agent Character (used for Bots AND 3D Lobby Preview)
 CS.buildAgentModel = function(team = 'CT', outfitId = null, weaponId = 'm4a4', skinId = 'default', knifeModelId = 'knife_default', gloveId = 'gloves_default') {
   const root = new THREE.Group();
+  const activeOutfitId = (outfitId && CS.AGENT_OUTFITS[outfitId]) ? outfitId : (team === 'CT' ? 'sas_navy' : 'phoenix_crimson');
 
   // Default team colors if no custom outfit specified
   let suitCol = team === 'CT' ? '#1e3a5f' : '#5c4028';
@@ -19,8 +20,8 @@ CS.buildAgentModel = function(team = 'CT', outfitId = null, weaponId = 'm4a4', s
   let visorCol = team === 'CT' ? '#38bdf8' : '#ef4444';
   let accCol = team === 'CT' ? '#0284c7' : '#d97706';
 
-  if (outfitId && CS.AGENT_OUTFITS[outfitId]) {
-    const o = CS.AGENT_OUTFITS[outfitId];
+  if (CS.AGENT_OUTFITS[activeOutfitId]) {
+    const o = CS.AGENT_OUTFITS[activeOutfitId];
     suitCol = o.suitColor;
     vestCol = o.vestColor;
     helmCol = o.helmetColor;
@@ -28,15 +29,45 @@ CS.buildAgentModel = function(team = 'CT', outfitId = null, weaponId = 'm4a4', s
     accCol = o.accentColor;
   }
 
-  const suitMat = new THREE.MeshStandardMaterial({ color: suitCol, roughness: 0.72, metalness: 0.12 });
-  const vestMat = new THREE.MeshStandardMaterial({ color: vestCol, roughness: 0.55, metalness: 0.3 });
-  const helmMat = new THREE.MeshStandardMaterial({ color: helmCol, roughness: 0.4, metalness: 0.45 });
-  const visorMat = new THREE.MeshStandardMaterial({
-    color: visorCol, emissive: visorCol, emissiveIntensity: 0.35, roughness: 0.15, metalness: 0.85
+  const isMetallicSuit = activeOutfitId === 'valkyrie_prime' || activeOutfitId === 'cyber_spectre';
+  const isGoldTrim = activeOutfitId === 'gold_commander' || activeOutfitId === 'valkyrie_prime';
+
+  const suitMat = new THREE.MeshStandardMaterial({
+    color: suitCol,
+    roughness: isMetallicSuit ? 0.32 : 0.72,
+    metalness: isMetallicSuit ? 0.55 : 0.14
   });
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.65 });
-  const bootMat = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.6, metalness: 0.2 });
-  const accMat = new THREE.MeshStandardMaterial({ color: accCol, roughness: 0.4, metalness: 0.5 });
+  const vestMat = new THREE.MeshStandardMaterial({
+    color: vestCol,
+    roughness: 0.45,
+    metalness: isGoldTrim ? 0.48 : 0.34
+  });
+  const helmMat = new THREE.MeshStandardMaterial({
+    color: helmCol,
+    roughness: 0.34,
+    metalness: 0.52
+  });
+  const visorMat = new THREE.MeshStandardMaterial({
+    color: visorCol,
+    emissive: visorCol,
+    emissiveIntensity: 0.58,
+    roughness: 0.12,
+    metalness: 0.9
+  });
+  const accMat = new THREE.MeshStandardMaterial({
+    color: accCol,
+    emissive: (activeOutfitId === 'cyber_spectre' || activeOutfitId === 'ghost_recon') ? accCol : 0x000000,
+    emissiveIntensity: (activeOutfitId === 'cyber_spectre' || activeOutfitId === 'ghost_recon') ? 0.38 : 0,
+    roughness: isGoldTrim ? 0.18 : 0.35,
+    metalness: isGoldTrim ? 0.92 : 0.55
+  });
+  const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.38, metalness: 0.78 });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.18, metalness: 0.92 });
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.22, metalness: 0.90 });
+  const leatherMat = new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.58, metalness: 0.22 });
+  const crimsonMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.42, metalness: 0.3 });
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.35, metalness: 0.25 });
+  const tanFabricMat = new THREE.MeshStandardMaterial({ color: 0xc2a878, roughness: 0.82, metalness: 0.05 });
 
   const hitboxes = [];
   const tagHitbox = (mesh, part) => {
@@ -46,41 +77,77 @@ CS.buildAgentModel = function(team = 'CT', outfitId = null, weaponId = 'm4a4', s
     hitboxes.push(mesh);
   };
 
-  // --- 1. LEGS (PIVOT AT HIP y = 0.86) ---
-  const leftLegPivot = new THREE.Group();
-  leftLegPivot.position.set(-0.14, 0.86, 0);
-  const lThigh = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.44, 0.21), suitMat);
-  lThigh.position.y = -0.22;
-  tagHitbox(lThigh, 'legs');
-  leftLegPivot.add(lThigh);
-  const lKnee = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.11, 0.23), vestMat);
-  lKnee.position.set(0, -0.44, 0.02);
-  leftLegPivot.add(lKnee);
-  const lCalf = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.38, 0.19), suitMat);
-  lCalf.position.y = -0.62;
-  tagHitbox(lCalf, 'legs');
-  leftLegPivot.add(lCalf);
-  const lBoot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.13, 0.27), bootMat);
-  lBoot.position.set(0, -0.80, -0.03);
-  leftLegPivot.add(lBoot);
-  root.add(leftLegPivot);
+  // --- 1. LEGS, KNEE ARMOR, THIGH HOLSTERS & COMBAT BOOTS (PIVOT AT HIP y = 0.86) ---
+  const buildDetailedLeg = (isLeft) => {
+    const legPivot = new THREE.Group();
+    legPivot.position.set(isLeft ? -0.145 : 0.145, 0.86, 0);
+    const sideSign = isLeft ? -1 : 1;
 
-  const rightLegPivot = new THREE.Group();
-  rightLegPivot.position.set(0.14, 0.86, 0);
-  const rThigh = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.44, 0.21), suitMat);
-  rThigh.position.y = -0.22;
-  tagHitbox(rThigh, 'legs');
-  rightLegPivot.add(rThigh);
-  const rKnee = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.11, 0.23), vestMat);
-  rKnee.position.set(0, -0.44, 0.02);
-  rightLegPivot.add(rKnee);
-  const rCalf = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.38, 0.19), suitMat);
-  rCalf.position.y = -0.62;
-  tagHitbox(rCalf, 'legs');
-  rightLegPivot.add(rCalf);
-  const rBoot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.13, 0.27), bootMat);
-  rBoot.position.set(0, -0.80, -0.03);
-  rightLegPivot.add(rBoot);
+    // Upper Thigh
+    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.195, 0.42, 0.215), suitMat);
+    thigh.position.y = -0.21;
+    tagHitbox(thigh, 'legs');
+    legPivot.add(thigh);
+
+    // Thigh Strap + Side Holster / Cargo Pouch
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.045, 0.225), leatherMat);
+    strap.position.y = -0.20;
+    legPivot.add(strap);
+
+    const thighRig = new THREE.Mesh(
+      new THREE.BoxGeometry(0.055, 0.16, 0.13),
+      (activeOutfitId === 'gold_commander' || activeOutfitId === 'valkyrie_prime') ? accMat : vestMat
+    );
+    thighRig.position.set(sideSign * 0.11, -0.20, 0.0);
+    legPivot.add(thighRig);
+
+    // Sculpted Knee Pad + Side Hinges
+    const kneeBase = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.12, 0.23), vestMat);
+    kneeBase.position.set(0, -0.43, -0.015);
+    legPivot.add(kneeBase);
+
+    const kneeCap = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.09, 0.04),
+      (activeOutfitId === 'cyber_spectre' || activeOutfitId === 'valkyrie_prime') ? visorMat : accMat
+    );
+    kneeCap.position.set(0, -0.43, -0.125);
+    legPivot.add(kneeCap);
+
+    // Lower Calf + Shin Greaves (for Heavy/Titan/Cyber/Commander armors)
+    const calf = new THREE.Mesh(new THREE.BoxGeometry(0.175, 0.36, 0.195), suitMat);
+    calf.position.y = -0.61;
+    tagHitbox(calf, 'legs');
+    legPivot.add(calf);
+
+    if (activeOutfitId === 'gign_urban' || activeOutfitId === 'valkyrie_prime' || activeOutfitId === 'cyber_spectre' || activeOutfitId === 'gold_commander') {
+      const shinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.27, 0.045), helmMat);
+      shinGuard.position.set(0, -0.60, -0.105);
+      legPivot.add(shinGuard);
+
+      const shinTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.23, 0.052), accMat);
+      shinTrim.position.set(0, -0.60, -0.108);
+      legPivot.add(shinTrim);
+    }
+
+    // Combat Boot (Ankle Cuff + Main Boot + Toe Cap + Heavy Sole)
+    const bootAnkle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.20), leatherMat);
+    bootAnkle.position.set(0, -0.75, 0);
+    legPivot.add(bootAnkle);
+
+    const bootMain = new THREE.Mesh(new THREE.BoxGeometry(0.185, 0.10, 0.27), leatherMat);
+    bootMain.position.set(0, -0.81, -0.035);
+    legPivot.add(bootMain);
+
+    const bootSole = new THREE.Mesh(new THREE.BoxGeometry(0.195, 0.035, 0.285), darkSteelMat);
+    bootSole.position.set(0, -0.848, -0.035);
+    legPivot.add(bootSole);
+
+    return legPivot;
+  };
+
+  const leftLegPivot = buildDetailedLeg(true);
+  const rightLegPivot = buildDetailedLeg(false);
+  root.add(leftLegPivot);
   root.add(rightLegPivot);
 
   // --- 2. UPPER BODY GROUP (Supports crouching) ---
@@ -88,88 +155,612 @@ CS.buildAgentModel = function(team = 'CT', outfitId = null, weaponId = 'm4a4', s
   upperBody.position.set(0, 0.86, 0);
   root.add(upperBody);
 
-  // Pelvis / Belt
+  // Pelvis & Utility Duty Belt with Buckle & Grenade Canisters
   const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.18, 0.26), vestMat);
   pelvis.position.y = 0.07;
   tagHitbox(pelvis, 'stomach');
   upperBody.add(pelvis);
 
-  // Torso + Tactical Plate Carrier Vest
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.065, 0.29), leatherMat);
+  belt.position.y = 0.12;
+  upperBody.add(belt);
+
+  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.03), accMat);
+  buckle.position.set(0, 0.12, -0.15);
+  upperBody.add(buckle);
+
+  // Core Torso
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.52, 0.27), suitMat);
   torso.position.y = 0.41;
   tagHitbox(torso, 'chest');
   upperBody.add(torso);
 
+  // Base Plate Carrier
   const plateCarrier = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.42, 0.31), vestMat);
   plateCarrier.position.y = 0.42;
   tagHitbox(plateCarrier, 'chest');
   upperBody.add(plateCarrier);
 
-  // Chest Pouches & Team Patch
-  const patch = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.33), accMat);
-  patch.position.y = 0.52;
-  upperBody.add(patch);
-
-  for (let i = -1; i <= 1; i++) {
-    const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.06), helmMat);
-    pouch.position.set(i * 0.13, 0.32, -0.17);
-    upperBody.add(pouch);
-  }
-
-  // Backpack
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.16), vestMat);
-  pack.position.set(0, 0.43, 0.20);
-  upperBody.add(pack);
-
-  // --- 3. HEAD, HELMET & VISOR ---
+  // --- 3. HEAD GROUP (Base Head Hitbox) ---
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 0.82, 0);
   upperBody.add(headGroup);
 
-  const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.30, 0.28), helmMat);
+  const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.29, 0.27), helmMat);
   tagHitbox(headBox, 'head');
   headGroup.add(headBox);
 
-  // Tactical Helmet Dome
-  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.33), helmMat);
-  helmet.position.set(0, 0.10, 0.01);
-  tagHitbox(helmet, 'head');
-  headGroup.add(helmet);
-
-  // Glowing Goggles / Ballistic Visor
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.09, 0.05), visorMat);
-  visor.position.set(0, 0.03, -0.14);
-  tagHitbox(visor, 'head');
-  headGroup.add(visor);
-
   // --- 4. ARMS & EQUIPPED 3D WEAPON ---
+  const gloveCfg = CS.GLOVES[gloveId] || CS.GLOVES.gloves_default;
+  const glovePalmMat = new THREE.MeshStandardMaterial({ color: gloveCfg.primary, roughness: 0.5 });
+  const gloveKnuckleMat = new THREE.MeshStandardMaterial({ color: gloveCfg.accent, roughness: 0.3, metalness: 0.6 });
+
   const rightArmPivot = new THREE.Group();
   rightArmPivot.position.set(0.32, 0.60, 0);
-  const rShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.18), accMat);
-  rightArmPivot.add(rShoulder);
-  const rArm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.14), suitMat);
+  const rArm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.40, 0.14), suitMat);
   rArm.position.set(0, -0.15, -0.16);
   rArm.rotation.x = Math.PI / 2.3;
   tagHitbox(rArm, 'chest');
   rightArmPivot.add(rArm);
+  // Forearm Vambrace + Gloved Fist
+  const rBracer = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.15), vestMat);
+  rBracer.position.set(0, -0.22, -0.25);
+  rBracer.rotation.x = Math.PI / 2.3;
+  rightArmPivot.add(rBracer);
+  const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.12), glovePalmMat);
+  rHand.position.set(0, -0.28, -0.34);
+  rightArmPivot.add(rHand);
   upperBody.add(rightArmPivot);
 
   const leftArmPivot = new THREE.Group();
   leftArmPivot.position.set(-0.32, 0.60, 0);
-  const lShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.18), accMat);
-  leftArmPivot.add(lShoulder);
-  const lArm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.14), suitMat);
+  const lArm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.40, 0.14), suitMat);
   lArm.position.set(0.08, -0.15, -0.18);
   lArm.rotation.x = Math.PI / 2.3;
   lArm.rotation.z = -0.35;
   tagHitbox(lArm, 'chest');
   leftArmPivot.add(lArm);
+  const lBracer = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.15), vestMat);
+  lBracer.position.set(0.12, -0.22, -0.27);
+  lBracer.rotation.x = Math.PI / 2.3;
+  lBracer.rotation.z = -0.35;
+  leftArmPivot.add(lBracer);
+  const lHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.12), gloveKnuckleMat);
+  lHand.position.set(0.16, -0.28, -0.35);
+  leftArmPivot.add(lHand);
   upperBody.add(leftArmPivot);
+
+  // ==========================================================================
+  // 5. BESPOKE 3D ARMOR ARCHITECTURE PER OUTFIT (DISTINCT SILHOUETTE & GEAR!)
+  // ==========================================================================
+  if (activeOutfitId === 'sas_navy') {
+    // --- SAS MIDNIGHT TACTICAL: S10 CBRN Gas Mask (Dual Round Lenses + Snout + Side Filter), Radio & Flashbangs ---
+    const fastHelm = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.15, 0.32), helmMat);
+    fastHelm.position.set(0, 0.10, 0.01);
+    tagHitbox(fastHelm, 'head');
+    headGroup.add(fastHelm);
+
+    // Side Comms Ear-Defenders
+    [-0.155, 0.155].forEach(xPos => {
+      const earCup = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.04, 12), darkSteelMat);
+      earCup.rotation.z = Math.PI / 2;
+      earCup.position.set(xPos, 0.01, 0.0);
+      headGroup.add(earCup);
+    });
+
+    // Dual Circular S10 Gas Mask Eye Lenses
+    [-0.068, 0.068].forEach(xPos => {
+      const lensRim = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.035, 16), darkSteelMat);
+      lensRim.rotation.x = Math.PI / 2;
+      lensRim.position.set(xPos, 0.03, -0.14);
+      headGroup.add(lensRim);
+
+      const lensGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.04, 16), visorMat);
+      lensGlass.rotation.x = Math.PI / 2;
+      lensGlass.position.set(xPos, 0.03, -0.145);
+      tagHitbox(lensGlass, 'head');
+      headGroup.add(lensGlass);
+    });
+
+    // Respirator Snout + Angled CBRN Filter Canister on Left Cheek
+    const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.062, 0.09, 14), darkSteelMat);
+    snout.rotation.x = Math.PI / 2 + 0.25;
+    snout.position.set(0, -0.065, -0.165);
+    headGroup.add(snout);
+
+    const filterCan = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.11, 14), accMat);
+    filterCan.rotation.set(0.35, 0, 0.65);
+    filterCan.position.set(-0.11, -0.075, -0.155);
+    headGroup.add(filterCan);
+
+    // Chest Walkie-Talkie with Antenna + 2 Flashbang Cylinders + 3 MP5 Mag Pouches
+    const radioBox = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.13, 0.05), darkSteelMat);
+    radioBox.position.set(-0.15, 0.53, -0.17);
+    upperBody.add(radioBox);
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.22, 6), darkSteelMat);
+    antenna.position.set(-0.17, 0.68, -0.17);
+    upperBody.add(antenna);
+
+    [0.05, 0.15].forEach(xPos => {
+      const flashCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.11, 10), accMat);
+      flashCyl.position.set(xPos, 0.53, -0.17);
+      upperBody.add(flashCyl);
+    });
+
+    for (let i = -1; i <= 1; i++) {
+      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.15, 0.065), helmMat);
+      pouch.position.set(i * 0.13, 0.31, -0.175);
+      upperBody.add(pouch);
+    }
+
+    // Rounded SAS Pauldrons & Oxygen/Hydration Pack
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.19), helmMat);
+      piv.add(pad);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.175, 0.04, 0.195), accMat);
+      stripe.position.y = 0.03;
+      piv.add(stripe);
+    });
+
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.38, 0.15), vestMat);
+    pack.position.set(0, 0.43, 0.19);
+    upperBody.add(pack);
+    const oxyTank = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.34, 12), accMat);
+    oxyTank.position.set(0.11, 0.44, 0.25);
+    upperBody.add(oxyTank);
+
+  } else if (activeOutfitId === 'gign_urban') {
+    // --- GIGN RIOT SPECIALIST: Heavy Altyn Titanium Helmet, Gold Riot Shield Visor, 360° Neck Gorget, Groin Apron & Shotgun Shells ---
+    const altynDome = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.22, 0.35), helmMat);
+    altynDome.position.set(0, 0.08, 0.01);
+    tagHitbox(altynDome, 'head');
+    headGroup.add(altynDome);
+
+    // Heavy Riot Shield Faceplate with Steel Brow Bar & Panoramic Gold Visor
+    const faceShield = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.25, 0.05), darkSteelMat);
+    faceShield.position.set(0, 0.02, -0.155);
+    headGroup.add(faceShield);
+
+    const goldGlass = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.11, 0.058), visorMat);
+    goldGlass.position.set(0, 0.04, -0.158);
+    tagHitbox(goldGlass, 'head');
+    headGroup.add(goldGlass);
+
+    // Massive 360° Ballistic Neck / Throat Collar (Gorget)
+    const gorgetFront = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.36), vestMat);
+    gorgetFront.position.set(0, 0.67, -0.02);
+    upperBody.add(gorgetFront);
+    const gorgetTrim = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.035, 0.37), accMat);
+    gorgetTrim.position.set(0, 0.72, -0.02);
+    upperBody.add(gorgetTrim);
+
+    // Extra-Thick EOD Chest Plate + Hanging Armored Groin Protector Apron
+    const heavyChest = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.35), vestMat);
+    heavyChest.position.set(0, 0.42, -0.01);
+    tagHitbox(heavyChest, 'chest');
+    upperBody.add(heavyChest);
+
+    const groinApron = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.07), vestMat);
+    groinApron.position.set(0, 0.02, -0.155);
+    upperBody.add(groinApron);
+    const apronStripe = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.04, 0.075), accMat);
+    apronStripe.position.set(0, -0.04, -0.155);
+    upperBody.add(apronStripe);
+
+    // 6x 12-Gauge Red/Gold Shotgun Shells Bandolier across Chest
+    for (let i = -2.5; i <= 2.5; i += 1) {
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.075, 8), crimsonMat);
+      shell.position.set(i * 0.068, 0.50, -0.195);
+      shell.rotation.z = 0.22;
+      upperBody.add(shell);
+      const brassBase = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.022, 8), brassMat);
+      brassBase.position.set(i * 0.068 - 0.006, 0.53, -0.195);
+      brassBase.rotation.z = 0.22;
+      upperBody.add(brassBase);
+    }
+
+    // Double-Layered Juggernaut Riot Pauldrons
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const sSign = idx === 0 ? 1 : -1;
+      const upperPad = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.20, 0.24), vestMat);
+      upperPad.position.set(sSign * 0.03, 0.02, 0);
+      piv.add(upperPad);
+      const lowerPad = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.14, 0.22), accMat);
+      lowerPad.position.set(sSign * 0.04, -0.09, 0);
+      piv.add(lowerPad);
+    });
+
+    // Heavy Breacher Shield / Ram Pack on Back
+    const riotPack = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.48, 0.19), helmMat);
+    riotPack.position.set(0, 0.42, 0.21);
+    upperBody.add(riotPack);
+
+  } else if (activeOutfitId === 'desert_seal') {
+    // --- SEAL SANDSTORM OPS: Quad-Tube GPNVG-18 Night Vision Goggles, Shemagh Scarf & Dual-Antenna Comms Pack ---
+    const opsCoreHelm = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.14, 0.31), helmMat);
+    opsCoreHelm.position.set(0, 0.11, 0.01);
+    tagHitbox(opsCoreHelm, 'head');
+    headGroup.add(opsCoreHelm);
+
+    // Wrapped Desert Shemagh Scarf around Neck & Lower Jaw
+    const shemaghNeck = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.13, 0.33), tanFabricMat);
+    shemaghNeck.position.set(0, 0.68, -0.01);
+    upperBody.add(shemaghNeck);
+
+    const faceWrap = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.13, 0.29), tanFabricMat);
+    faceWrap.position.set(0, -0.07, -0.01);
+    headGroup.add(faceWrap);
+
+    // Dark Ballistic Eye Goggles + 4-Tube Panoramic Night Vision Goggles (GPNVG-18)
+    const nvgMount = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.06), darkSteelMat);
+    nvgMount.position.set(0, 0.06, -0.155);
+    headGroup.add(nvgMount);
+
+    [-0.105, -0.038, 0.038, 0.105].forEach(xOff => {
+      const tubeHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.11, 12), darkSteelMat);
+      tubeHousing.rotation.x = Math.PI / 2;
+      tubeHousing.position.set(xOff, 0.035, -0.195);
+      headGroup.add(tubeHousing);
+
+      const glowingLens = new THREE.Mesh(new THREE.CylinderGeometry(0.023, 0.023, 0.02, 12), visorMat);
+      glowingLens.rotation.x = Math.PI / 2;
+      glowingLens.position.set(xOff, 0.035, -0.245);
+      tagHitbox(glowingLens, 'head');
+      headGroup.add(glowingLens);
+    });
+
+    // 4x Tan STANAG Magazine Pouches + Chemlight Glowsticks on Chest
+    for (let i = -1.5; i <= 1.5; i += 1) {
+      const magPouch = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.16, 0.07), helmMat);
+      magPouch.position.set(i * 0.105, 0.32, -0.175);
+      upperBody.add(magPouch);
+    }
+    const chemlight = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.14, 8), visorMat);
+    chemlight.rotation.z = Math.PI / 2;
+    chemlight.position.set(0, 0.52, -0.175);
+    upperBody.add(chemlight);
+
+    // Desert Shoulder Pads
+    [rightArmPivot, leftArmPivot].forEach(piv => {
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.18), vestMat);
+      piv.add(pad);
+    });
+
+    // Long-Range Field Radio Backpack with Dual Tall Whip Antennas
+    const radioPack = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.18), vestMat);
+    radioPack.position.set(0, 0.43, 0.20);
+    upperBody.add(radioPack);
+
+    [-0.14, 0.14].forEach(xAnt => {
+      const whipAnt = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.011, 0.56, 8), darkSteelMat);
+      whipAnt.position.set(xAnt, 0.85, 0.22);
+      upperBody.add(whipAnt);
+    });
+
+  } else if (activeOutfitId === 'phoenix_crimson') {
+    // --- PHOENIX ENFORCER: Ballistic Skull Mask, Crimson Beret, Crossed Gold Bullet Bandolier & Spiked Pauldrons ---
+    // Sculpted Bone-White/Silver Skull Faceplate
+    const skullMask = new THREE.Mesh(new THREE.BoxGeometry(0.285, 0.25, 0.05), boneMat);
+    skullMask.position.set(0, -0.01, -0.145);
+    headGroup.add(skullMask);
+
+    // Glowing Crimson Eye Slits
+    [-0.065, 0.065].forEach(xEye => {
+      const eyeSlit = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, 0.058), visorMat);
+      eyeSlit.position.set(xEye, 0.035, -0.148);
+      eyeSlit.rotation.z = xEye < 0 ? -0.18 : 0.18;
+      tagHitbox(eyeSlit, 'head');
+      headGroup.add(eyeSlit);
+    });
+
+    // Skull Nose Cavity & Vertical Jaw Teeth Vents
+    const noseVent = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.045, 0.058), darkSteelMat);
+    noseVent.position.set(0, -0.02, -0.148);
+    headGroup.add(noseVent);
+    for (let t = -2; t <= 2; t++) {
+      const toothBar = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.075, 0.058), darkSteelMat);
+      toothBar.position.set(t * 0.036, -0.09, -0.148);
+      headGroup.add(toothBar);
+    }
+
+    // Slanted Crimson Military Beret with Gold Badge
+    const beret = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.09, 16), crimsonMat);
+    beret.position.set(0.02, 0.15, 0.0);
+    beret.rotation.z = -0.18;
+    tagHitbox(beret, 'head');
+    headGroup.add(beret);
+
+    const beretBadge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.02), brassMat);
+    beretBadge.position.set(-0.06, 0.15, -0.155);
+    headGroup.add(beretBadge);
+
+    // Crossed Golden Machine-Gun Bullet Bandolier across Chest
+    for (let b = -4; b <= 4; b++) {
+      const bullet = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.065, 8), brassMat);
+      bullet.rotation.z = Math.PI / 2 - 0.65;
+      bullet.position.set(b * 0.045, 0.42 + b * 0.038, -0.175);
+      upperBody.add(bullet);
+    }
+
+    // Spiked Gladiator Mercenary Pauldrons
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const sSign = idx === 0 ? 1 : -1;
+      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.18, 0.21), accMat);
+      piv.add(pauldron);
+      // 2 Metallic Shoulder Spikes
+      [-0.04, 0.04].forEach(zOff => {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.11, 8), chromeMat);
+        spike.position.set(sSign * 0.05, 0.13, zOff);
+        spike.rotation.z = -sSign * 0.35;
+        piv.add(spike);
+      });
+    });
+
+    // Heavy Ammo Drum Pack on Back
+    const ammoPack = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.36, 16), vestMat);
+    ammoPack.position.set(0, 0.42, 0.20);
+    upperBody.add(ammoPack);
+
+  } else if (activeOutfitId === 'cyber_spectre') {
+    // --- CYBER SPECTRE NEON: Angular Cyberpunk Helmet, Twin Magenta Cyber-Ears/Fins, Glowing Chest Arc-Reactor & Thruster Jetpack ---
+    const cyberHelm = new THREE.Mesh(new THREE.OctahedronGeometry(0.195, 1), helmMat);
+    cyberHelm.scale.set(0.95, 1.05, 1.05);
+    cyberHelm.position.set(0, 0.02, 0);
+    tagHitbox(cyberHelm, 'head');
+    headGroup.add(cyberHelm);
+
+    // V-Shaped Neon Cyan Laser Visor
+    [-0.065, 0.065].forEach(xSide => {
+      const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.045, 0.05), visorMat);
+      vBar.position.set(xSide, 0.03, -0.15);
+      vBar.rotation.z = xSide < 0 ? -0.24 : 0.24;
+      tagHitbox(vBar, 'head');
+      headGroup.add(vBar);
+    });
+
+    // Twin Glowing Magenta Cyber-Fins / Data-Antennas on Helmet Top
+    [-0.12, 0.12].forEach(xFin => {
+      const fin = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.19, 4), accMat);
+      fin.position.set(xFin, 0.21, 0.02);
+      fin.rotation.z = xFin < 0 ? 0.28 : -0.28;
+      fin.rotation.x = -0.2;
+      headGroup.add(fin);
+    });
+
+    // Glowing Circular Cyan/Magenta Arc-Reactor Core in Center of Chest
+    const reactorOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.04, 20), accMat);
+    reactorOuter.rotation.x = Math.PI / 2;
+    reactorOuter.position.set(0, 0.45, -0.165);
+    upperBody.add(reactorOuter);
+
+    const reactorCore = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 20), visorMat);
+    reactorCore.rotation.x = Math.PI / 2;
+    reactorCore.position.set(0, 0.45, -0.17);
+    upperBody.add(reactorCore);
+
+    // Neon Rib Strips
+    [-0.17, 0.17].forEach(xRib => {
+      const neonStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.34, 0.33), visorMat);
+      neonStrip.position.set(xRib, 0.41, 0);
+      upperBody.add(neonStrip);
+    });
+
+    // Floating Angular Cyber Shoulder Wings
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const sSign = idx === 0 ? 1 : -1;
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.22), helmMat);
+      wing.rotation.z = -sSign * 0.32;
+      wing.position.set(sSign * 0.03, 0.04, 0);
+      piv.add(wing);
+      const neonEdge = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.035, 0.23), accMat);
+      neonEdge.rotation.z = -sSign * 0.32;
+      neonEdge.position.set(sSign * 0.03, 0.09, 0);
+      piv.add(neonEdge);
+    });
+
+    // Twin Sci-Fi Thruster Jetpack Modules on Back
+    [-0.11, 0.11].forEach(xJet => {
+      const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 0.38, 12), helmMat);
+      thruster.position.set(xJet, 0.43, 0.21);
+      upperBody.add(thruster);
+      const nozzleGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.04, 12), visorMat);
+      nozzleGlow.position.set(xJet, 0.23, 0.21);
+      upperBody.add(nozzleGlow);
+    });
+
+  } else if (activeOutfitId === 'gold_commander') {
+    // --- ★ GLOBAL ELITE COMMANDER: 24k Gold Crown/Crest Helmet, Golden Eagle Cuirass, Imperial Epaulettes & Commander Cape ---
+    const cmdHelm = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), helmMat);
+    cmdHelm.position.set(0, 0.09, 0.01);
+    tagHitbox(cmdHelm, 'head');
+    headGroup.add(cmdHelm);
+
+    // Golden Imperial Crest Ridge on Top of Helmet + Gold Chin Guard
+    const goldCrest = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.34), brassMat);
+    goldCrest.position.set(0, 0.20, 0.01);
+    headGroup.add(goldCrest);
+
+    const goldCrownBand = new THREE.Mesh(new THREE.BoxGeometry(0.335, 0.045, 0.335), brassMat);
+    goldCrownBand.position.set(0, 0.11, 0.01);
+    headGroup.add(goldCrownBand);
+
+    const goldVisor = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.10, 0.055), visorMat);
+    goldVisor.position.set(0, 0.03, -0.145);
+    tagHitbox(goldVisor, 'head');
+    headGroup.add(goldVisor);
+
+    // Sculpted 24k Gold Eagle Breastplate across Chest
+    const eagleCenter = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 0.045), brassMat);
+    eagleCenter.position.set(0, 0.44, -0.165);
+    upperBody.add(eagleCenter);
+
+    [-0.14, 0.14].forEach(xWing => {
+      const eagleWing = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.04), brassMat);
+      eagleWing.position.set(xWing, 0.48, -0.165);
+      eagleWing.rotation.z = xWing < 0 ? -0.25 : 0.25;
+      upperBody.add(eagleWing);
+    });
+
+    // Ornate Gold Epaulettes on Shoulders
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const sSign = idx === 0 ? 1 : -1;
+      const epaulette = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.22), brassMat);
+      epaulette.position.set(sSign * 0.02, 0.05, 0);
+      piv.add(epaulette);
+      const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.20), vestMat);
+      fringe.position.set(sSign * 0.03, -0.04, 0);
+      piv.add(fringe);
+    });
+
+    // Flowing Royal Black & Gold Commander Cape on Back!
+    const capeMain = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.88, 0.04), vestMat);
+    capeMain.position.set(0, 0.22, 0.19);
+    capeMain.rotation.x = 0.08;
+    upperBody.add(capeMain);
+
+    const capeGoldBorder = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.07, 0.045), brassMat);
+    capeGoldBorder.position.set(0, -0.19, 0.225);
+    upperBody.add(capeGoldBorder);
+
+  } else if (activeOutfitId === 'ghost_recon') {
+    // --- ★ GHOST PHANTOM (Lv.3 Exklusiv): Sniper Hood/Cowl, Skull Lower Mask, Tri-Lens Violet Sonar Goggles & Stealth Cloak ---
+    // Deep Draped Sniper Hood / Cowl over Head
+    const hoodOuter = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.34, 0.35), suitMat);
+    hoodOuter.position.set(0, 0.03, 0.02);
+    tagHitbox(hoodOuter, 'head');
+    headGroup.add(hoodOuter);
+
+    const hoodPeak = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.16, 4), suitMat);
+    hoodPeak.rotation.y = Math.PI / 4;
+    hoodPeak.position.set(0, 0.23, -0.02);
+    headGroup.add(hoodPeak);
+
+    // Phantom Skull Jaw Plate
+    const jawMask = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.045), boneMat);
+    jawMask.position.set(0, -0.06, -0.145);
+    headGroup.add(jawMask);
+
+    // Iconic Tri-Lens (3-Dot Triangle) Glowing Violet Sonar Goggles!
+    const sonarRig = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.10, 0.05), darkSteelMat);
+    sonarRig.position.set(0, 0.04, -0.145);
+    headGroup.add(sonarRig);
+
+    [
+      [-0.065, 0.025],
+      [0.065, 0.025],
+      [0.0, 0.075]
+    ].forEach(([lx, ly]) => {
+      const sonarLens = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.045, 14), visorMat);
+      sonarLens.rotation.x = Math.PI / 2;
+      sonarLens.position.set(lx, ly, -0.16);
+      tagHitbox(sonarLens, 'head');
+      headGroup.add(sonarLens);
+    });
+
+    // Draped Stealth Mantle / Poncho across Chest & Shoulders
+    const cloakChest = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.22, 0.35), suitMat);
+    cloakChest.position.set(0, 0.56, 0.0);
+    upperBody.add(cloakChest);
+
+    // Glowing Violet Stealth-Field Nodes on Chest
+    [-0.14, 0, 0.14].forEach(nx => {
+      const node = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.04), visorMat);
+      node.position.set(nx, 0.34, -0.17);
+      upperBody.add(node);
+    });
+
+    [rightArmPivot, leftArmPivot].forEach(piv => {
+      const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.22, 0.22), suitMat);
+      piv.add(shroud);
+      const vTrim = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.03, 0.225), visorMat);
+      vTrim.position.y = -0.08;
+      piv.add(vTrim);
+    });
+
+    // Draped Recon Cloak + Rangefinder Drone Unit on Back
+    const stealthCape = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.68, 0.06), suitMat);
+    stealthCape.position.set(0, 0.30, 0.19);
+    upperBody.add(stealthCape);
+
+  } else if (activeOutfitId === 'valkyrie_prime') {
+    // --- ★ PRIME TITAN ENFORCER (Lv.8 Exklusiv): White-Gold Winged Valkyrie Helmet, Cyan Diamond Core & 4 Back Energy Wings ---
+    const titanHelm = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.29, 0.31), helmMat);
+    titanHelm.position.set(0, 0.02, 0.0);
+    tagHitbox(titanHelm, 'head');
+    headGroup.add(titanHelm);
+
+    // T-Shaped Paladin Cyan Glowing Visor
+    const visorHoriz = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.065, 0.05), visorMat);
+    visorHoriz.position.set(0, 0.045, -0.145);
+    tagHitbox(visorHoriz, 'head');
+    headGroup.add(visorHoriz);
+
+    const visorVert = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.05), visorMat);
+    visorVert.position.set(0, -0.02, -0.145);
+    headGroup.add(visorVert);
+
+    // Swept-Up Golden Valkyrie Helmet Side-Wings!
+    [-0.17, 0.17].forEach(xWing => {
+      const hWing = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.24, 0.16), brassMat);
+      hWing.position.set(xWing, 0.14, 0.02);
+      hWing.rotation.x = -0.35;
+      hWing.rotation.z = xWing < 0 ? 0.22 : -0.22;
+      headGroup.add(hWing);
+    });
+
+    // Sculpted White-Ceramic & Gold Paladin Chestplate + Glowing Cyan Diamond Core
+    const titanBreastplate = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.44, 0.33), helmMat);
+    titanBreastplate.position.set(0, 0.42, 0);
+    tagHitbox(titanBreastplate, 'chest');
+    upperBody.add(titanBreastplate);
+
+    const goldRibs = new THREE.Mesh(new THREE.BoxGeometry(0.53, 0.08, 0.34), brassMat);
+    goldRibs.position.set(0, 0.28, 0);
+    upperBody.add(goldRibs);
+
+    const diamondCore = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.05), visorMat);
+    diamondCore.rotation.z = Math.PI / 4;
+    diamondCore.position.set(0, 0.45, -0.165);
+    upperBody.add(diamondCore);
+
+    // Winged White & Gold Pauldrons
+    [rightArmPivot, leftArmPivot].forEach((piv, idx) => {
+      const sSign = idx === 0 ? 1 : -1;
+      const pBase = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), helmMat);
+      pBase.position.set(sSign * 0.02, 0.03, 0);
+      piv.add(pBase);
+      const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.05, 0.23), brassMat);
+      goldTrim.position.set(sSign * 0.02, 0.09, 0);
+      piv.add(goldTrim);
+    });
+
+    // 4 Swept-Out Golden & Cyan Valkyrie Energy Wings on the Back!
+    const wingCore = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.34, 0.16), brassMat);
+    wingCore.position.set(0, 0.45, 0.20);
+    upperBody.add(wingCore);
+
+    [
+      [-0.32, 0.62, 0.55],
+      [0.32, 0.62, -0.55],
+      [-0.28, 0.34, 0.85],
+      [0.28, 0.34, -0.85]
+    ].forEach(([wx, wy, wzRot]) => {
+      const wingBlade = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.07, 0.035), brassMat);
+      wingBlade.position.set(wx, wy, 0.24);
+      wingBlade.rotation.z = wzRot;
+      upperBody.add(wingBlade);
+
+      const wingFeatherGlow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.04), visorMat);
+      wingFeatherGlow.position.set(wx, wy - 0.03, 0.24);
+      wingFeatherGlow.rotation.z = wzRot;
+      upperBody.add(wingFeatherGlow);
+    });
+  }
 
   // Attach 3D Weapon to Agent Hands
   const gunMount = new THREE.Group();
   gunMount.position.set(0.12, 0.46, -0.32);
-  const gunModel = CS.weaponBuilder.buildWeaponModel(weaponId, skinId, knifeModelId, gloveId, outfitId || 'sas_navy', false);
+  const gunModel = CS.weaponBuilder.buildWeaponModel(weaponId, skinId, knifeModelId, gloveId, activeOutfitId, false);
   gunModel.scale.set(1.15, 1.15, 1.15);
   gunMount.add(gunModel);
   upperBody.add(gunMount);
@@ -268,7 +859,15 @@ class TacticalBot {
       this.scene.remove(this.mesh);
     }
     const diffCfg = this.getDifficultyConfig();
-    let outfitId = this.team === 'CT' ? 'sas_navy' : 'phoenix_crimson';
+    const botHash = (this.name || 'Bot').charCodeAt(0) % 3;
+    let outfitId;
+    if (this.team === 'CT') {
+      const ctPool = ['sas_navy', 'gign_urban', 'desert_seal'];
+      outfitId = ctPool[botHash];
+    } else {
+      const tPool = ['phoenix_crimson', 'desert_seal', 'ghost_recon'];
+      outfitId = tPool[botHash];
+    }
     if (diffCfg.id === 'nightmare' && (!CS.game || !CS.game.player || this.team !== CS.game.player.team)) {
       outfitId = this.team === 'CT' ? 'cyber_spectre' : 'gold_commander';
     }

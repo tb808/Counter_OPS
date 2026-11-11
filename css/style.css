@@ -97,7 +97,7 @@ body, html {
 
 .lobby-nav {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nav-tab-btn {
@@ -105,12 +105,15 @@ body, html {
   border: 1px solid rgba(148, 163, 184, 0.2);
   color: #cbd5e1;
   font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 1px;
-  padding: 11px 18px;
+  font-size: 12.5px;
+  letter-spacing: 0.8px;
+  padding: 10px 14px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .nav-tab-btn:hover {
   background: rgba(56, 189, 248, 0.15);
@@ -124,23 +127,49 @@ body, html {
   box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
 }
 
+.unclaimed-badge {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 900;
+  padding: 1px 6px;
+  border-radius: 99px;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.75);
+  animation: pulseBadge 1.4s infinite ease-in-out;
+}
+@keyframes pulseBadge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+
 .lobby-profile-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .rank-box {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.28);
   padding: 6px 14px;
   border-radius: 6px;
-  min-width: 170px;
+  min-width: 210px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.rank-box:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
 }
 #header-rank-name {
   font-size: 12px;
   font-weight: 800;
   color: #f8fafc;
+}
+.header-xp-text {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #38bdf8;
 }
 .xp-bar-bg {
   width: 100%;
@@ -1764,12 +1793,36 @@ body, html {
 .stats-reset-btn {
   font-size: 11.5px !important;
   padding: 6px 12px !important;
-  border-color: rgba(239, 68, 68, 0.4) !important;
-  color: #fca5a5 !important;
+  border-color: rgba(251, 191, 36, 0.45) !important;
+  color: #fde047 !important;
 }
 .stats-reset-btn:hover {
-  background: rgba(239, 68, 68, 0.2) !important;
+  background: rgba(251, 191, 36, 0.18) !important;
+  border-color: #fbbf24 !important;
+}
+
+.account-reset-btn {
+  font-size: 11.5px !important;
+  padding: 6px 12px !important;
+  background: rgba(127, 29, 29, 0.42) !important;
+  border: 1px solid rgba(239, 68, 68, 0.65) !important;
+  color: #fecaca !important;
+  font-weight: 900 !important;
+}
+.account-reset-btn:hover {
+  background: rgba(220, 38, 38, 0.45) !important;
   border-color: #ef4444 !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.45);
+}
+
+.account-reset-box {
+  background: rgba(127, 29, 29, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 9px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* 6 Top KPI Summary Cards */
@@ -1997,4 +2050,309 @@ body, html {
 .stats-extra-val {
   color: #38bdf8;
   font-weight: 900;
+}
+
+/* ============================================================================
+   LEVEL PROGRESSION & EXCLUSIVE REWARDS TAB (🎖️ LEVEL-PFAD)
+   ============================================================================ */
+.level-pass-wrapper {
+  width: min(1320px, 95vw);
+  height: calc(100vh - 155px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 22px;
+  overflow-y: auto;
+}
+
+.level-pass-header {
+  display: grid;
+  grid-template-columns: 1.3fr 1.2fr auto;
+  gap: 16px;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.85));
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.level-pass-rank-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.level-pass-badge-circle {
+  width: 62px;
+  height: 62px;
+  border-radius: 14px;
+  background: radial-gradient(circle at 30% 30%, rgba(56, 189, 248, 0.35), rgba(15, 23, 42, 0.95));
+  border: 2px solid #38bdf8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+}
+
+.level-pass-xp-bar-outer {
+  width: 100%;
+  height: 12px;
+  background: #090d16;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.level-pass-xp-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #818cf8, #fbbf24);
+  border-radius: 99px;
+  transition: width 0.35s ease;
+}
+
+.level-xp-rules-box {
+  background: rgba(9, 13, 22, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-left: 3px solid #fbbf24;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.level-rewards-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1260px) {
+  .level-rewards-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .level-pass-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+.level-reward-card {
+  background: rgba(15, 23, 42, 0.88);
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  border-radius: 11px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  position: relative;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.level-reward-card.claimable {
+  border-color: #fbbf24;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.16) 0%, rgba(15, 23, 42, 0.95) 100%);
+  box-shadow: 0 0 24px rgba(251, 191, 36, 0.35);
+  transform: translateY(-2px);
+}
+
+.level-reward-card.claimed {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%);
+}
+
+.level-reward-card.locked {
+  opacity: 0.78;
+}
+
+.level-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.level-step-pill {
+  font-size: 11px;
+  font-weight: 900;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+.level-reward-card.claimable .level-step-pill {
+  background: rgba(251, 191, 36, 0.22);
+  color: #fde047;
+  border-color: #fbbf24;
+}
+.level-reward-card.claimed .level-step-pill {
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.level-xp-req {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #94a3b8;
+}
+
+.level-preview-box {
+  height: 92px;
+  background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.16), rgba(9, 13, 22, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.level-preview-box img {
+  max-width: 92%;
+  max-height: 84px;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.65));
+}
+
+.level-exclusive-tag {
+  position: absolute;
+  bottom: 4px;
+  right: 5px;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(225, 29, 72, 0.88);
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.level-reward-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: #f8fafc;
+  line-height: 1.25;
+}
+
+.level-reward-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.level-bonus-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.level-bonus-pill {
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.level-claim-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.level-claim-btn.btn-ready {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+}
+.level-claim-btn.btn-ready:hover {
+  filter: brightness(1.12);
+  transform: scale(1.02);
+}
+
+.level-claim-btn.btn-claimed {
+  background: rgba(16, 185, 129, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  cursor: pointer;
+}
+
+.level-claim-btn.btn-locked {
+  background: rgba(30, 41, 59, 0.7);
+  color: #64748b;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  cursor: not-allowed;
+}
+
+/* Round End XP & Level Up Box */
+.round-end-xp-box {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.round-end-xp-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.round-end-xp-breakdown {
+  font-size: 11.5px;
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.round-end-xp-track {
+  width: 100%;
+  height: 9px;
+  background: #090d16;
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.round-end-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #fbbf24);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
+.round-end-xp-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+  text-align: right;
+}
+
+.round-end-levelup-banner {
+  margin-top: 4px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(234, 88, 12, 0.25));
+  border: 1px solid #fbbf24;
+  color: #fde047;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-align: center;
 }
