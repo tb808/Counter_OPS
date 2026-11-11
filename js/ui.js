@@ -1456,8 +1456,10 @@ class UIManager {
     if (!reward) return false;
 
     const rankInfo = this.getRankInfo();
+    const rankMeta = CS.RANKS[levelNum] || { minXP: reward.minXP || 0 };
+    const reqXP = reward.minXP ?? rankMeta.minXP ?? 0;
     if (rankInfo.level < levelNum) {
-      if (!silent) this.showToast(`🔒 Erreiche zuerst Level ${levelNum} (${reward.minXP} XP)!`, 'error');
+      if (!silent) this.showToast(`🔒 Erreiche zuerst Level ${levelNum} (${reqXP.toLocaleString('de-DE')} XP)!`, 'error');
       return false;
     }
 
@@ -1588,7 +1590,9 @@ class UIManager {
     }
 
     gridEl.innerHTML = (CS.LEVEL_REWARDS || []).map(r => {
-      const rankMeta = CS.RANKS[r.level] || { name: `Level ${r.level}`, icon: '🎖️' };
+      const rankMeta = CS.RANKS[r.level] || { name: `Level ${r.level}`, icon: '🎖️', minXP: 0 };
+      const reqXP = r.minXP ?? rankMeta.minXP ?? 0;
+      const rewardDesc = r.desc || r.subtitle || '';
       const isUnlocked = rankInfo.level >= r.level;
       const isClaimed = claimed.includes(r.level);
       const isClaimable = isUnlocked && !isClaimed;
@@ -1597,7 +1601,7 @@ class UIManager {
       let previewImgUrl = '';
       if (r.cosmetic) {
         if (r.cosmetic.type === 'skin') {
-          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('skin', r.cosmetic.id, r.cosmetic.weapon || 'ak47');
+          previewImgUrl = CS.textures.getCosmeticPreviewDataURL('skin', r.cosmetic.id, r.cosmetic.weaponPreview || r.cosmetic.weapon || 'ak47');
         } else if (r.cosmetic.type === 'knife') {
           const kObj = CS.KNIFE_MODELS[r.cosmetic.id];
           previewImgUrl = CS.textures.getCosmeticPreviewDataURL('knife', r.cosmetic.id, kObj?.previewSkin || 'obsidian_prestige');
@@ -1617,7 +1621,7 @@ class UIManager {
         bonusPills.push(`<span class="level-bonus-pill" style="color:#4ade80;border-color:rgba(74,222,128,0.4);background:rgba(16,185,129,0.15);">📦 1x Gratis-Kiste (${cObj ? cObj.name.split(' ')[0] : 'Case'})</span>`);
       }
 
-      let btnLabel = `🔒 AB LEVEL ${r.level} (${r.minXP} XP)`;
+      let btnLabel = `🔒 AB LEVEL ${r.level} (${reqXP.toLocaleString('de-DE')} XP)`;
       let btnClass = 'btn-locked';
       if (isClaimable) {
         btnLabel = '🎁 BELOHNUNG ABHOLEN!';
@@ -1632,14 +1636,14 @@ class UIManager {
           <div>
             <div class="level-card-top">
               <span class="level-step-pill">${rankMeta.icon} LEVEL ${r.level}</span>
-              <span class="level-xp-req">${r.minXP.toLocaleString('de-DE')} XP</span>
+              <span class="level-xp-req">${reqXP.toLocaleString('de-DE')} XP</span>
             </div>
             <div class="level-preview-box" style="margin-top:8px;">
               ${previewImgUrl ? `<img src="${previewImgUrl}" alt="${r.title}" />` : ''}
               ${r.cosmetic ? `<span class="level-exclusive-tag">★ NUR LEVEL ${r.level}</span>` : `<span class="level-exclusive-tag" style="background:#0284c7;">CR + KISTE</span>`}
             </div>
             <div class="level-reward-title" style="margin-top:8px;">${r.title}</div>
-            <div class="level-reward-desc" style="margin-top:3px;">${r.subtitle}</div>
+            <div class="level-reward-desc" style="margin-top:3px;">${rewardDesc}</div>
           </div>
 
           <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px;">
