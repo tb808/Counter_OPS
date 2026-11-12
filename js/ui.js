@@ -524,18 +524,13 @@ class UIManager {
       });
     }
 
-    // Start Match Button
-    const startBtn = document.getElementById('btn-start-match');
-    if (startBtn) {
-      startBtn.addEventListener('click', () => {
-        CS.audio.playUISound('buy');
-        const selectedMode = document.querySelector('.mode-card.selected')?.dataset.mode || 'bomb';
-        const selectedMap = document.querySelector('.map-card.selected')?.dataset.map || 'de_sandstorm';
-        const selectedTeam = document.querySelector('.team-pick-btn.selected')?.dataset.team || 'CT';
-        const selectedDiff = this.profile.settings.difficulty || 'hard';
-        CS.game.startMatch(selectedMode, selectedMap, selectedTeam, selectedDiff);
-      });
-    }
+    // Start Match Buttons (Right & Left Panel)
+    ['btn-start-match', 'btn-start-match-left'].forEach(btnId => {
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        btn.addEventListener('click', () => this.startSelectedMatch());
+      }
+    });
 
     // Shop category filter buttons
     document.querySelectorAll('.shop-filter-btn').forEach(btn => {
@@ -632,24 +627,60 @@ class UIManager {
   // ==========================================================================
   // PLAY TAB: MODES, MAPS & TEAM SELECTION
   // ==========================================================================
+  startSelectedMatch(overrideMode = null, overrideMap = null) {
+    CS.audio.playUISound('buy');
+    if (overrideMode) {
+      document.querySelectorAll('.mode-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.mode === overrideMode);
+      });
+    }
+    if (overrideMap) {
+      document.querySelectorAll('.map-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.map === overrideMap);
+      });
+    }
+    const selectedMode = overrideMode || document.querySelector('.mode-card.selected')?.dataset.mode || 'bomb';
+    const selectedMap = overrideMap || document.querySelector('.map-card.selected')?.dataset.map || 'de_sandstorm';
+    const selectedTeam = document.querySelector('.team-pick-btn.selected')?.dataset.team || 'CT';
+    const selectedDiff = this.profile.settings.difficulty || 'hard';
+    CS.game.startMatch(selectedMode, selectedMap, selectedTeam, selectedDiff);
+  }
+
   renderModeAndMapSelection() {
     const modeContainer = document.getElementById('mode-list');
     if (modeContainer) {
       modeContainer.innerHTML = Object.values(CS.MODES).map((m, idx) => `
-        <div class="mode-card ${idx === 0 ? 'selected' : ''}" data-mode="${m.id}">
+        <div class="mode-card ${idx === 0 ? 'selected' : ''}" data-mode="${m.id}" title="Klicken zum Auswählen • Doppelklick oder ▶ START zum direkten Starten">
           <div class="mode-icon">${m.icon}</div>
-          <div class="mode-info">
-            <div class="mode-title" style="display:flex;justify-content:space-between;align-items:center;"><span>${m.name}</span><span class="diff-cr-pill">🪙 ${m.creditMult || 1}x CR</span></div>
+          <div class="mode-info" style="flex:1;min-width:0;">
+            <div class="mode-title" style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+              <span>${m.name}</span>
+              <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                <span class="diff-cr-pill">🪙 ${m.creditMult || 1}x CR</span>
+                <button type="button" class="mode-quick-start-btn" data-start-mode="${m.id}">▶ START</button>
+              </div>
+            </div>
             <div class="mode-desc">${m.desc}</div>
           </div>
         </div>
       `).join('');
 
       modeContainer.querySelectorAll('.mode-card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.mode-quick-start-btn')) return;
           CS.audio.playUISound('click');
           modeContainer.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
+        });
+        card.addEventListener('dblclick', () => {
+          this.startSelectedMatch(card.dataset.mode);
+        });
+      });
+
+      modeContainer.querySelectorAll('.mode-quick-start-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.startSelectedMatch(btn.dataset.startMode);
         });
       });
     }
@@ -657,7 +688,7 @@ class UIManager {
     const mapContainer = document.getElementById('map-list');
     if (mapContainer) {
       mapContainer.innerHTML = Object.values(CS.MAPS).map((mp, idx) => `
-        <div class="map-card ${idx === 0 ? 'selected' : ''}" data-map="${mp.id}">
+        <div class="map-card ${idx === 0 ? 'selected' : ''}" data-map="${mp.id}" title="Klicken zum Auswählen • Doppelklick zum direkten Starten">
           <div class="map-preview-banner theme-${mp.theme}">
             <span class="map-code-badge">${mp.code}</span>
           </div>
@@ -673,6 +704,9 @@ class UIManager {
           CS.audio.playUISound('click');
           mapContainer.querySelectorAll('.map-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
+        });
+        card.addEventListener('dblclick', () => {
+          this.startSelectedMatch(null, card.dataset.map);
         });
       });
     }
