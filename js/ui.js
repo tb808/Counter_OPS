@@ -2085,7 +2085,7 @@ class UIManager {
                 ${thumbHtml}
                 <div>
                   <div class="b-name">${w.name}<span style="color:#38bdf8;font-size:11px">${skinName}</span></div>
-                  <div class="b-sub">DMG: ${w.damage} • $${w.killReward || 300} Kill-Bonus</div>
+                  <div class="b-sub">DMG: ${w.damage} • $${w.killReward || 100} Kill-Bonus</div>
                 </div>
               </div>
               <span class="b-price">$${w.price}</span>

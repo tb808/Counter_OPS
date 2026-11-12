@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COUNTER OPS: TACTICAL STRIKE — 3D Tactical Browser Shooter</title>
-  <link rel="stylesheet" href="css/style.css?v=15" />
+  <link rel="stylesheet" href="css/style.css?v=16" />
 </head>
 <body>
 
@@ -337,7 +337,7 @@
     <div id="multikill-banner" class="multikill-banner hidden">
       <div id="multikill-skulls" class="multikill-skulls">💀💀</div>
       <div id="multikill-title" class="multikill-title">DOUBLE KILL!</div>
-      <div id="multikill-sub" class="multikill-sub">+25 BONUS CREDITS</div>
+      <div id="multikill-sub" class="multikill-sub">+5 BONUS CREDITS</div>
     </div>
 
     <!-- Round Banner -->
@@ -356,7 +356,7 @@
     </div>
 
     <!-- Death / Killcam Banner Overlay -->
-    <div id="death-screen-overlay" class="death-banner-card hidden">
+    <div id="death-screen-overlay" class="hidden"><div class="death-banner-card">
       <div class="death-skull-header">💀 DU WURDEST ELIMINIERT</div>
       <div class="death-killer-row">
         <img id="death-weapon-img" class="death-weapon-thumb" src="" alt="Waffe" />
@@ -370,6 +370,7 @@
         <div class="death-respawn-track">
           <div id="death-respawn-fill"></div>
         </div>
+      </div>
       </div>
     </div>
 
@@ -385,7 +386,7 @@
       </div>
       <div class="stat-block money-block">
         <span class="stat-label">KAUF [B]</span>
-        <span id="hud-money" class="stat-val">$800</span>
+        <span id="hud-money" class="stat-val">$500</span>
       </div>
     </div>
 
@@ -422,7 +423,7 @@
           <p style="font-size:12px;color:#94a3b8;">Deine ausgerüsteten Lobby-Skins werden automatisch auf gekaufte Waffen angewendet!</p>
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
-          <div style="font-size:24px;font-weight:900;color:#4ade80;" id="buy-menu-money">$800</div>
+          <div style="font-size:24px;font-weight:900;color:#4ade80;" id="buy-menu-money">$500</div>
           <button id="btn-close-buy" class="nav-tab-btn">SCHLIESSEN [B / ESC]</button>
         </div>
       </div>
@@ -484,7 +485,7 @@
         </div>
         <div>
           <div style="font-size:11px;color:#94a3b8;font-weight:700;">RUNDE CREDITS</div>
-          <div id="round-end-credits" style="font-size:20px;font-weight:900;color:#fbbf24;margin-top:4px;">+25 CR</div>
+          <div id="round-end-credits" style="font-size:20px;font-weight:900;color:#fbbf24;margin-top:4px;">+10 CR</div>
         </div>
       </div>
 
@@ -568,13 +569,13 @@
 
   <!-- SCRIPTS (Local Three.js + Modular Game Engine) -->
   <script src="js/lib/three.min.js?v=5"></script>
-  <script src="js/data.js?v=15"></script>
-  <script src="js/audio.js?v=15"></script>
-  <script src="js/textures.js?v=15"></script>
-  <script src="js/weapons3d.js?v=15"></script>
-  <script src="js/maps.js?v=15"></script>
-  <script src="js/entities.js?v=15"></script>
-  <script src="js/ui.js?v=15"></script>
-  <script src="js/game.js?v=15"></script>
+  <script src="js/data.js?v=16"></script>
+  <script src="js/audio.js?v=16"></script>
+  <script src="js/textures.js?v=16"></script>
+  <script src="js/weapons3d.js?v=16"></script>
+  <script src="js/maps.js?v=16"></script>
+  <script src="js/entities.js?v=16"></script>
+  <script src="js/ui.js?v=16"></script>
+  <script src="js/game.js?v=16"></script>
 </body>
 </html>

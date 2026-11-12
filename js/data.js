@@ -15,7 +15,7 @@ CS.WEAPONS = {
   // --- PISTOLS (SLOT 2) ---
   glock: {
     id: 'glock', name: 'Glock-18', category: 'pistols', slot: 2, team: 'T',
-    price: 200, killReward: 300,
+    price: 200, killReward: 100,
     damage: 29, headMult: 3.6, armorPen: 0.52, range: 110,
     fireRate: 400, automatic: false, burstCapable: true,
     magSize: 20, reserveAmmo: 120, reloadTime: 2.1,
@@ -25,7 +25,7 @@ CS.WEAPONS = {
   },
   usps: {
     id: 'usps', name: 'USP-S', category: 'pistols', slot: 2, team: 'CT',
-    price: 200, killReward: 300,
+    price: 200, killReward: 100,
     damage: 35, headMult: 3.8, armorPen: 0.55, range: 130,
     fireRate: 352, automatic: false, silenced: true, canToggleSilencer: true,
     magSize: 12, reserveAmmo: 24, reloadTime: 2.1,
@@ -35,7 +35,7 @@ CS.WEAPONS = {
   },
   p250: {
     id: 'p250', name: 'P250', category: 'pistols', slot: 2, team: 'BOTH',
-    price: 300, killReward: 300,
+    price: 300, killReward: 100,
     damage: 38, headMult: 3.7, armorPen: 0.68, range: 120,
     fireRate: 400, automatic: false,
     magSize: 13, reserveAmmo: 26, reloadTime: 2.2,
@@ -45,7 +45,7 @@ CS.WEAPONS = {
   },
   deagle: {
     id: 'deagle', name: 'Desert Eagle', category: 'pistols', slot: 2, team: 'BOTH',
-    price: 700, killReward: 300,
+    price: 700, killReward: 100,
     damage: 62, headMult: 3.9, armorPen: 0.93, range: 160,
     fireRate: 267, automatic: false,
     magSize: 7, reserveAmmo: 35, reloadTime: 2.3,
@@ -57,17 +57,17 @@ CS.WEAPONS = {
   // --- SMGS & SHOTGUNS (SLOT 1 - HEAVY/SMG) ---
   mp9: {
     id: 'mp9', name: 'MP9 Tactical', category: 'smgs', slot: 1, team: 'BOTH',
-    price: 1250, killReward: 600,
+    price: 1250, killReward: 180,
     damage: 26, headMult: 3.5, armorPen: 0.60, range: 95,
     fireRate: 857, automatic: true,
     magSize: 30, reserveAmmo: 120, reloadTime: 2.1,
     spreadBase: 0.0055, spreadMove: 0.012, recoilUp: 0.0045, recoilSide: 0.0028,
     moveSpeed: 0.96, soundType: 'smg',
-    desc: 'Extrem schnell feuernde Maschinenpistole. Ideal für den Nahkampf und Eco-Runden ($600 Kill-Bonus).'
+    desc: 'Extrem schnell feuernde Maschinenpistole. Ideal für den Nahkampf und Eco-Runden ($180 Kill-Bonus).'
   },
   ump45: {
     id: 'ump45', name: 'UMP-45', category: 'smgs', slot: 1, team: 'BOTH',
-    price: 1200, killReward: 600,
+    price: 1200, killReward: 180,
     damage: 35, headMult: 3.5, armorPen: 0.65, range: 105,
     fireRate: 666, automatic: true,
     magSize: 25, reserveAmmo: 100, reloadTime: 2.5,
@@ -77,17 +77,17 @@ CS.WEAPONS = {
   },
   nova: {
     id: 'nova', name: 'Nova Schrotflinte', category: 'smgs', slot: 1, team: 'BOTH',
-    price: 1050, killReward: 900,
+    price: 1050, killReward: 250,
     damage: 24, pellets: 8, headMult: 2.5, armorPen: 0.55, range: 65,
     fireRate: 68, automatic: false,
     magSize: 8, reserveAmmo: 32, reloadTime: 2.8,
     spreadBase: 0.032, spreadMove: 0.025, recoilUp: 0.018, recoilSide: 0.005,
     moveSpeed: 0.88, soundType: 'shotgun',
-    desc: 'Pump-Action-Schrotflinte. Tödlich auf kurze Distanz und bringt satte $900 pro Abschuss!'
+    desc: 'Pump-Action-Schrotflinte. Tödlich auf kurze Distanz und bringt satte $250 pro Abschuss!'
   },
   xm1014: {
     id: 'xm1014', name: 'XM1014 Auto-Shotgun', category: 'smgs', slot: 1, team: 'BOTH',
-    price: 2000, killReward: 900,
+    price: 2000, killReward: 250,
     damage: 20, pellets: 7, headMult: 2.4, armorPen: 0.72, range: 70,
     fireRate: 171, automatic: true,
     magSize: 7, reserveAmmo: 32, reloadTime: 2.6,
@@ -99,7 +99,7 @@ CS.WEAPONS = {
   // --- RIFLES & SNIPERS (SLOT 1) ---
   famas: {
     id: 'famas', name: 'FAMAS F1', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 1950, killReward: 300,
+    price: 1950, killReward: 100,
     damage: 30, headMult: 3.5, armorPen: 0.70, range: 150,
     fireRate: 666, automatic: true, burstCapable: true,
     magSize: 25, reserveAmmo: 90, reloadTime: 2.7,
@@ -109,7 +109,7 @@ CS.WEAPONS = {
   },
   m4a1s: {
     id: 'm4a1s', name: 'M4A1-S', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 2900, killReward: 300,
+    price: 2900, killReward: 100,
     damage: 34, headMult: 3.4, armorPen: 0.72, range: 180,
     fireRate: 600, automatic: true, silenced: true, canToggleSilencer: true,
     magSize: 25, reserveAmmo: 75, reloadTime: 2.6,
@@ -119,7 +119,7 @@ CS.WEAPONS = {
   },
   m4a4: {
     id: 'm4a4', name: 'M4A4', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 3000, killReward: 300,
+    price: 3000, killReward: 100,
     damage: 33, headMult: 3.5, armorPen: 0.70, range: 175,
     fireRate: 666, automatic: true,
     magSize: 30, reserveAmmo: 90, reloadTime: 2.7,
@@ -129,7 +129,7 @@ CS.WEAPONS = {
   },
   ak47: {
     id: 'ak47', name: 'AK-47', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 2700, killReward: 300,
+    price: 2700, killReward: 100,
     damage: 37, headMult: 3.85, armorPen: 0.78, range: 190,
     fireRate: 600, automatic: true,
     magSize: 30, reserveAmmo: 90, reloadTime: 2.5,
@@ -139,7 +139,7 @@ CS.WEAPONS = {
   },
   aug: {
     id: 'aug', name: 'AUG Scoped', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 3300, killReward: 300,
+    price: 3300, killReward: 100,
     damage: 32, headMult: 3.6, armorPen: 0.90, range: 195,
     fireRate: 600, automatic: true, scopeLevels: [1.6],
     magSize: 30, reserveAmmo: 90, reloadTime: 3.0,
@@ -149,7 +149,7 @@ CS.WEAPONS = {
   },
   ssg08: {
     id: 'ssg08', name: 'SSG 08 (Scout)', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 1700, killReward: 300,
+    price: 1700, killReward: 100,
     damage: 88, headMult: 4.0, armorPen: 0.85, range: 300,
     fireRate: 48, automatic: false, boltAction: true, scopeLevels: [2.4, 5.5],
     magSize: 10, reserveAmmo: 90, reloadTime: 2.8,
@@ -159,7 +159,7 @@ CS.WEAPONS = {
   },
   awp: {
     id: 'awp', name: 'AWP Magnum', category: 'rifles', slot: 1, team: 'BOTH',
-    price: 4750, killReward: 100,
+    price: 4750, killReward: 35,
     damage: 118, headMult: 4.0, armorPen: 0.98, range: 350,
     fireRate: 41, automatic: false, boltAction: true, scopeLevels: [2.6, 6.5],
     magSize: 5, reserveAmmo: 30, reloadTime: 3.4,
@@ -171,37 +171,37 @@ CS.WEAPONS = {
   // --- KNIFE (SLOT 3) ---
   knife: {
     id: 'knife', name: 'Kampfmesser', category: 'melee', slot: 3, team: 'BOTH',
-    price: 0, killReward: 1500,
+    price: 0, killReward: 450,
     damage: 40, heavyDamage: 65, backstabDamage: 180, headMult: 1.5, armorPen: 0.85, range: 3.3,
     fireRate: 150, automatic: false,
     magSize: 0, reserveAmmo: 0, reloadTime: 0,
     spreadBase: 0, spreadMove: 0, recoilUp: 0.01, recoilSide: 0,
     moveSpeed: 1.08, soundType: 'knife',
-    desc: 'Maximale Laufgeschwindigkeit. Linksklick für schnelle Schnitte, Rechtsklick für tödlichen Stich ($1500 Bonus).'
+    desc: 'Maximale Laufgeschwindigkeit. Linksklick für schnelle Schnitte, Rechtsklick für tödlichen Stich ($450 Bonus).'
   },
 
   // --- GRENADES (SLOT 4) ---
   he: {
     id: 'he', name: 'HE-Granate', category: 'grenades', slot: 4, team: 'BOTH',
-    price: 300, killReward: 300, isGrenade: true, grenadeType: 'he',
+    price: 300, killReward: 100, isGrenade: true, grenadeType: 'he',
     damage: 98, range: 9.5, moveSpeed: 0.98,
     desc: 'Hochexplosive Splittergranate. Verursacht hohen Flächenschaden im Umkreis.'
   },
   flash: {
     id: 'flash', name: 'Blendgranate', category: 'grenades', slot: 4, team: 'BOTH',
-    price: 200, killReward: 300, isGrenade: true, grenadeType: 'flash',
+    price: 200, killReward: 100, isGrenade: true, grenadeType: 'flash',
     damage: 1, range: 25, moveSpeed: 0.98,
     desc: 'Blendet und betäubt alle Personen, die in Richtung der Detonation blicken.'
   },
   smoke: {
     id: 'smoke', name: 'Rauchgranate', category: 'grenades', slot: 4, team: 'BOTH',
-    price: 300, killReward: 300, isGrenade: true, grenadeType: 'smoke',
+    price: 300, killReward: 100, isGrenade: true, grenadeType: 'smoke',
     damage: 0, range: 6.5, moveSpeed: 0.98,
     desc: 'Erzeugt für 15 Sekunden eine dichte Rauchwand, die Sichtlinien und Scharfschützen blockiert.'
   },
   molotov: {
     id: 'molotov', name: 'Brandgranate', category: 'grenades', slot: 4, team: 'BOTH',
-    price: 400, killReward: 300, isGrenade: true, grenadeType: 'molotov',
+    price: 400, killReward: 100, isGrenade: true, grenadeType: 'molotov',
     damage: 40, range: 5.2, moveSpeed: 0.98,
     desc: 'Entzündet beim Aufprall den Boden und blockiert Durchgänge mit intensivem Feuer.'
   },
@@ -731,7 +731,7 @@ CS.MODES = {
     icon: '💣',
     creditMult: 1.25,
     maxRounds: 12,
-    startMoney: 1000,
+    startMoney: 500,
     roundTime: 300,
     buyTime: 300,
     bombTime: 40,

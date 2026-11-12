@@ -792,7 +792,7 @@ class TacticalBot {
     this.hasHelmet = true;
     this.hasDefuseKit = team === 'CT';
     this.hasC4 = false;
-    this.money = 800;
+    this.money = 500;
     this.kills = 0;
     this.deaths = 0;
     this.assists = 0;

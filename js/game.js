@@ -33,7 +33,7 @@ class TacticalGame {
       armor: 100,
       hasHelmet: true,
       hasDefuseKit: false,
-      money: 800,
+      money: 500,
       kills: 0,
       deaths: 0,
       assists: 0,
@@ -625,14 +625,14 @@ class TacticalGame {
     CS.ui.recordRoundEnd(playerWon, this.currentMap);
 
     // Economy & Lobby Credits / XP Rewards!
-    const roundMoneyBonus = playerWon ? 3250 : 1900;
+    const roundMoneyBonus = playerWon ? 1100 : 600;
     this.player.money = Math.min(16000, this.player.money + roundMoneyBonus);
     this.bots.forEach(b => {
-      b.money = Math.min(16000, b.money + (b.team === winningTeam ? 3250 : 1900));
+      b.money = Math.min(16000, b.money + (b.team === winningTeam ? 1100 : 600));
     });
 
     const isPractice = this.currentMode === 'practice';
-    const baseRoundCR = isPractice ? (playerWon ? 15 : 8) : (playerWon ? 35 : 15);
+    const baseRoundCR = isPractice ? (playerWon ? 4 : 2) : (playerWon ? 10 : 4);
     let creditReward = Math.max(1, Math.round(baseRoundCR * this.getCreditMultiplier()));
     const diffData = this.getDifficultyData();
     const xpMult = this.getXPMultiplier();
@@ -650,7 +650,7 @@ class TacticalGame {
 
     // Award Clutch Bonus if player won a 1v2+ situation in Bomb mode!
     if (playerWon && !this.player.dead && this.currentMode === 'bomb' && (this.player.clutchSituation || 0) >= 2) {
-      const clutchCR = Math.round(60 * this.player.clutchSituation * this.getCreditMultiplier());
+      const clutchCR = Math.max(5, Math.round(12 * this.player.clutchSituation * this.getCreditMultiplier()));
       creditReward += clutchCR;
       CS.ui.recordMedal('clutchesWon');
       this.showMultiKillBanner(
@@ -1376,8 +1376,8 @@ class TacticalGame {
       this.player.roundBombBonusXP = (this.player.roundBombBonusXP || 0) + 50;
     }
     if (this.player.team === 'CT') {
-      const defuseCR = Math.round(150 * this.getCreditMultiplier());
-      this.player.money = Math.min(16000, this.player.money + 2500);
+      const defuseCR = Math.max(5, Math.round(25 * this.getCreditMultiplier()));
+      this.player.money = Math.min(16000, this.player.money + 750);
       CS.ui.addCredits(defuseCR, 'Bombe entschärft Bonus!');
     }
     CS.audio.announce('The bomb has been defused');
@@ -1385,10 +1385,10 @@ class TacticalGame {
     if (this.currentMode === 'bomb') {
       this.endRound('CT', `✂️ Bombe wurde von ${defuserName} entschärft!`);
     } else {
-      const defuseCR = Math.round(150 * this.getCreditMultiplier());
+      const defuseCR = Math.max(5, Math.round(25 * this.getCreditMultiplier()));
       this.roundPhase = 'live';
       this.scores.CT += 5;
-      this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, `+5 Punkte für CT • +$2.500 Match-Geld • +${defuseCR} CR!`);
+      this.showBanner(`✂️ BOMBE ENTSCHÄRFT VON ${defuserName}!`, `+5 Punkte für CT • +$750 Match-Geld • +${defuseCR} CR!`);
       this.reassignC4AfterExplosion();
     }
   }
@@ -1405,7 +1405,7 @@ class TacticalGame {
     CS.audio.playExplosion('c4');
     this.spawnImpactParticles(bPos, 0xff5500, 65, 18);
 
-    const detonateCR = Math.round(150 * this.getCreditMultiplier());
+    const detonateCR = Math.max(5, Math.round(25 * this.getCreditMultiplier()));
     if (this.currentMode === 'bomb') {
       // Massive blast radius at the bombsite; suppress intermediate team-wipe check because the bomb explosion itself wins the round for T!
       this._suppressWinCheck = true;
@@ -1420,7 +1420,7 @@ class TacticalGame {
       this._suppressWinCheck = false;
 
       if (this.player.team === 'T') {
-        this.player.money = Math.min(16000, this.player.money + 2500);
+        this.player.money = Math.min(16000, this.player.money + 750);
         CS.ui.addCredits(detonateCR, 'C4 Detonation Bonus!');
       }
       this.endRound('T', `💥 Bombenplatz ${siteName} wurde durch das C4 gesprengt!`);
@@ -1435,9 +1435,9 @@ class TacticalGame {
         }
       }
       this.scores.T += 5;
-      this.player.money = Math.min(16000, this.player.money + 2500);
+      this.player.money = Math.min(16000, this.player.money + 750);
       CS.ui.addCredits(detonateCR, 'C4 Detonation Bonus!');
-      this.showBanner(`💥 BOMBENPLATZ ${siteName} GESPRENGT!`, `+5 Punkte für Terroristen • +$2.500 Match-Geld • +${detonateCR} CR!`);
+      this.showBanner(`💥 BOMBENPLATZ ${siteName} GESPRENGT!`, `+5 Punkte für Terroristen • +$750 Match-Geld • +${detonateCR} CR!`);
       this.reassignC4AfterExplosion();
     }
   }
@@ -1510,12 +1510,12 @@ class TacticalGame {
       if (this.currentMode !== 'bomb') {
         this.scores[killer.team] = (this.scores[killer.team] || 0) + 1;
       }
-      const wReward = CS.WEAPONS[weaponId]?.killReward || 300;
+      const wReward = CS.WEAPONS[weaponId]?.killReward || 100;
       killer.money = Math.min(16000, (killer.money || 0) + wReward);
 
       if (isPlayerKiller && !isPlayerVictim) {
-        const baseKillCR = isHeadshot ? 75 : 50;
-        const crBonus = Math.max(5, Math.round(baseKillCR * this.getCreditMultiplier()));
+        const baseKillCR = isHeadshot ? 12 : 8;
+        const crBonus = Math.max(1, Math.round(baseKillCR * this.getCreditMultiplier()));
         const diffData = this.getDifficultyData();
         CS.ui.addCredits(crBonus, `${isHeadshot ? '🎯 Kopfschuss-Kill!' : 'Gegner eliminiert'} (${diffData.name})`);
         if (isHeadshot) {
@@ -1633,6 +1633,9 @@ class TacticalGame {
       this.player.defusingProgress = 0;
       this.mouseDownLeft = false;
       this.setScope(-1);
+      this.player.flashedAlpha = 0;
+      const flashEl = document.getElementById('flashbang-overlay');
+      if (flashEl) flashEl.style.opacity = '0';
       document.getElementById('interaction-prompt')?.classList.add('hidden');
       document.getElementById('action-progress-wrap')?.classList.add('hidden');
 
@@ -1939,7 +1942,7 @@ class TacticalGame {
     if (!this.roundFirstBloodAwarded) {
       this.roundFirstBloodAwarded = true;
       CS.ui.recordMedal('firstBloods');
-      const fbBonus = Math.max(10, Math.round(25 * this.getCreditMultiplier()));
+      const fbBonus = Math.max(2, Math.round(5 * this.getCreditMultiplier()));
       CS.ui.addCredits(fbBonus, '🩸 First Blood Bonus!');
       if (streak === 1) {
         CS.audio.playKillStreakSound(1);
@@ -1951,28 +1954,28 @@ class TacticalGame {
     // 2. Multi-Kill Medals (Double Kill -> Triple Kill -> Ultra Kill -> ACE!)
     if (streak === 2) {
       CS.ui.recordMedal('doubleKills');
-      const bonus = Math.round(25 * this.getCreditMultiplier());
+      const bonus = Math.max(2, Math.round(5 * this.getCreditMultiplier()));
       CS.ui.addCredits(bonus, '⚡ Double Kill Bonus!');
       CS.audio.playKillStreakSound(2);
       CS.audio.announce('Double Kill');
       this.showMultiKillBanner('💀💀', '⚡ DOUBLE KILL!', `+${bonus} BONUS CREDITS`, false);
     } else if (streak === 3) {
       CS.ui.recordMedal('tripleKills');
-      const bonus = Math.round(50 * this.getCreditMultiplier());
+      const bonus = Math.max(4, Math.round(10 * this.getCreditMultiplier()));
       CS.ui.addCredits(bonus, '🔥 Triple Kill Bonus!');
       CS.audio.playKillStreakSound(3);
       CS.audio.announce('Triple Kill');
       this.showMultiKillBanner('💀💀💀', '🔥 TRIPLE KILL!', `+${bonus} BONUS CREDITS`, false);
     } else if (streak === 4) {
       CS.ui.recordMedal('ultraKills');
-      const bonus = Math.round(85 * this.getCreditMultiplier());
+      const bonus = Math.max(6, Math.round(18 * this.getCreditMultiplier()));
       CS.ui.addCredits(bonus, '💀 Ultra Kill Bonus!');
       CS.audio.playKillStreakSound(4);
       CS.audio.announce('Ultra Kill');
       this.showMultiKillBanner('💀💀💀💀', '💥 ULTRA KILL!', `+${bonus} BONUS CREDITS`, false);
     } else if (streak >= 5) {
       CS.ui.recordMedal('aces');
-      const bonus = Math.round(150 * this.getCreditMultiplier());
+      const bonus = Math.max(10, Math.round(30 * this.getCreditMultiplier()));
       CS.ui.addCredits(bonus, '👑 ★ A C E ★ Bonus!');
       CS.audio.playKillStreakSound(5);
       CS.audio.announce('Ace! Entire enemy team eliminated!');
