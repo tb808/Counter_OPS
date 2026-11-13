@@ -107,6 +107,7 @@
               </button>
             </div>
             <div id="customizer-weapon-list" class="weapon-pill-bar"></div>
+            <div id="customizer-upgrades-wrap" class="customizer-upgrades-wrap"></div>
             <div id="customizer-skins" class="items-grid"></div>
           </div>
         </div>
@@ -249,8 +250,8 @@
           <div class="panel-title" style="margin-top:12px;">⌨️ TASTATURBELEGUNG (COUNTER-STRIKE STANDARD)</div>
           <div style="font-size:13px;line-height:1.75;color:#cbd5e1;">
             <div><strong>[W, A, S, D]</strong> Bewegen &bull; <strong>[SPACE]</strong> Springen &bull; <strong>[CTRL / C]</strong> Ducken (präziseres Zielen)</div>
-            <div><strong>[SHIFT]</strong> Schleichen (Lautlose Schritte!) &bull; <strong>[LINKSKLICK]</strong> Schießen / Schlagen</div>
-            <div><strong>[RECHTSKLICK]</strong> Scope-Zoom (AWP/AUG) / Burst-Modus / Schalldämpfer / Schwerer Messerstich</div>
+            <div><strong>[SHIFT]</strong> Rennen / Sprinten (+42% Tempo) &bull; <strong>[LINKSKLICK]</strong> Schießen / Schlagen</div>
+            <div><strong>[RECHTSKLICK]</strong> Sniper-Scope (Klick) / Holo-Visier (Gedrückt halten) / Messerstich &bull; <strong>[T]</strong> Feuerstoß / Schalldämpfer</div>
             <div><strong>[B]</strong> Waffen- &amp; Granaten-Kaufmenü &bull; <strong>[R]</strong> Nachladen &bull; <strong>[F]</strong> Waffe / Messer inspizieren!</div>
             <div><strong>[1-5]</strong> Waffenslots &bull; <strong>[Q]</strong> Schneller Waffenwechsel &bull; <strong>[G]</strong> Waffe fallenlassen</div>
             <div><strong>[E]</strong> Bombe platzieren / entschärfen / Waffe aufheben &bull; <strong>[Z, X, V]</strong> Funkbefehle &bull; <strong>[TAB]</strong> Scoreboard</div>
@@ -507,7 +508,7 @@
         </div>
       </div>
 
-      <p style="font-size:13px;color:#94a3b8;">Möchtest du noch eine 5-Minuten-Runde spielen oder zurück ins Hauptmenü?</p>
+      <p id="round-end-prompt" style="font-size:13px;color:#94a3b8;">Möchtest du noch eine 5-Minuten-Runde spielen oder zurück ins Hauptmenü?</p>
 
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button id="btn-play-next-round" class="start-match-btn" style="padding:15px;font-size:16px;">

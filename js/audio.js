@@ -539,6 +539,129 @@ class AudioManager {
     osc.start(now);
     osc.stop(now + 0.055);
   }
+
+  // ==========================================================================
+  // ZOMBIE SURVIVAL & MYSTERY BOX AUDIO
+  // ==========================================================================
+  playZombieGrowl(isBrute = false, sourcePos = null, listenerPos = null, listenerForward = null) {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const dest = this.getSpatialNodes(sourcePos, listenerPos, listenerForward, 45);
+    if (!dest) return;
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const g = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    const base = isBrute ? 68 : (92 + Math.random() * 35);
+    osc.frequency.setValueAtTime(base, now);
+    osc.frequency.linearRampToValueAtTime(base * 0.68, now + 0.48);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(isBrute ? 320 : 540, now);
+    g.gain.setValueAtTime(isBrute ? 0.28 : 0.16, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+    osc.connect(filter);
+    filter.connect(g);
+    g.connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.52);
+  }
+
+  playZombieHit() {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    // Sharp claw swipe + heavy impact
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1100, now);
+    filter.frequency.exponentialRampToValueAtTime(260, now + 0.18);
+    const ng = this.ctx.createGain();
+    ng.gain.setValueAtTime(0.42, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    noise.connect(filter);
+    filter.connect(ng);
+    ng.connect(this.masterGain);
+    noise.start(now);
+    noise.stop(now + 0.21);
+
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(135, now);
+    osc.frequency.exponentialRampToValueAtTime(42, now + 0.2);
+    g.gain.setValueAtTime(0.45, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.23);
+  }
+
+  playMysteryBoxTick(step = 0) {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+    const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 987.77, 783.99];
+    const freq = scale[step % scale.length];
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now);
+    g.gain.setValueAtTime(0.16, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.12);
+  }
+
+  playPowerupPickup() {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, now + i * 0.055);
+      g.gain.setValueAtTime(0.18, now + i * 0.055);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.055 + 0.25);
+      o.connect(g);
+      g.connect(this.masterGain);
+      o.start(now + i * 0.055);
+      o.stop(now + i * 0.055 + 0.27);
+    });
+  }
+
+  playWaveStart(wave = 1) {
+    this.init();
+    if (!this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+    const notes = wave % 3 === 0 ? [110, 130.81, 164.81, 220] : [130.81, 164.81, 196.0];
+    notes.forEach((f, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sawtooth';
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.setValueAtTime(480, now);
+      o.frequency.setValueAtTime(f, now + i * 0.09);
+      g.gain.setValueAtTime(0.15, now + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 1.15);
+      o.connect(filt);
+      filt.connect(g);
+      g.connect(this.masterGain);
+      o.start(now + i * 0.09);
+      o.stop(now + 1.2);
+    });
+  }
 }
 
 CS.audio = new AudioManager();

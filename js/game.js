@@ -49,7 +49,7 @@ class TacticalGame {
       pitch: 0,
       onGround: true,
       crouching: false,
-      walking: false,
+      sprinting: false,
       eyeHeight: 1.65,
       stepDistance: 0,
 
@@ -106,6 +106,10 @@ class TacticalGame {
     this.activeSquadOrder = null;
     this.roundFirstBloodAwarded = false;
     this._bulletDecalMat = null;
+    this._nextClickStartsNewMatch = false;
+    this._playerDiedLastRound = false;
+
+    this.zombieState = this.createEmptyZombieState();
 
     this.plantedBomb = {
       active: false,
@@ -215,7 +219,9 @@ class TacticalGame {
         else if (code === 'KeyQ') this.switchSlot(this.player.lastSlot || 3);
         else if (code === 'KeyR') this.startReload();
         else if (code === 'KeyF') this.triggerInspect();
+        else if (code === 'KeyT' && !e.repeat) this.toggleWeaponFireOrSilencer();
         else if (code === 'KeyG') this.dropCurrentWeapon();
+        else if (code === 'KeyE' && !e.repeat && this.currentMode === 'zombies') this.tryInteractMysteryBox();
         else if (code === 'KeyZ') this.sendRadioCommand('rush');
         else if (code === 'KeyX') this.sendRadioCommand('follow');
         else if (code === 'KeyV') this.sendRadioCommand('hold');
@@ -258,7 +264,16 @@ class TacticalGame {
 
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseDownLeft = false;
-      if (e.button === 2) this.mouseDownRight = false;
+      if (e.button === 2) {
+        this.mouseDownRight = false;
+        this.handleRightClickRelease();
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      this.mouseDownLeft = false;
+      this.mouseDownRight = false;
+      this.handleRightClickRelease();
     });
 
     window.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -300,13 +315,18 @@ class TacticalGame {
     document.getElementById('btn-return-lobby')?.addEventListener('click', () => this.exitToLobby());
     document.getElementById('btn-close-buy')?.addEventListener('click', () => this.toggleBuyMenu(false));
 
-    // Round End Modal Choice Buttons ("Noch eine Runde spielen" vs "Zurück ins Hauptmenü")
+    // Round End Modal Choice Buttons ("Nächste Runde" / "Neues Match" vs "Zurück ins Hauptmenü")
     document.getElementById('btn-play-next-round')?.addEventListener('click', () => {
       CS.audio.playUISound('buy');
       document.getElementById('round-end-overlay')?.classList.add('hidden');
-      this.roundNumber++;
-      this.startNewRound();
-      this.safeRequestPointerLock();
+      if (this._nextClickStartsNewMatch || this.currentMode === 'zombies') {
+        this._nextClickStartsNewMatch = false;
+        this.startMatch(this.currentMode, this.currentMap, this.player.team, this.currentDifficulty);
+      } else {
+        this.roundNumber++;
+        this.startNewRound();
+        this.safeRequestPointerLock();
+      }
     });
     document.getElementById('btn-round-end-lobby')?.addEventListener('click', () => {
       CS.audio.playUISound('click');
@@ -391,18 +411,27 @@ class TacticalGame {
     // Reset Match Scores & Stats
     this.roundNumber = 1;
     this.scores = { CT: 0, T: 0 };
+    this._nextClickStartsNewMatch = false;
+    this._playerDiedLastRound = false;
     this.player.kills = 0;
     this.player.deaths = 0;
     this.player.assists = 0;
     this.player.armsRaceIndex = 0;
     this.player.money = this.modeConfig.startMoney;
 
-    // Reset Default Inventory
-    const startPistol = playerTeam === 'CT' ? 'usps' : 'glock';
+    const isZombieMode = modeId === 'zombies';
+    if (isZombieMode && this.scene.fog) {
+      this.scene.fog.color.lerp(new THREE.Color(0x0b101d), 0.58);
+      this.scene.fog.density = 0.0044;
+    }
+
+    // Reset Default Inventory (apply any unlocked weapon upgrade capacity!)
+    const startPistol = isZombieMode ? 'glock' : (playerTeam === 'CT' ? 'usps' : 'glock');
     const pData = CS.WEAPONS[startPistol];
+    const tdmRifleId = playerTeam === 'CT' ? 'm4a4' : 'ak47';
     this.player.slots = {
-      1: modeId === 'tdm' ? { id: playerTeam === 'CT' ? 'm4a4' : 'ak47', mag: 30, reserve: 90, burstMode: false, silenced: false } : null,
-      2: { id: startPistol, mag: pData.magSize, reserve: pData.reserveAmmo, burstMode: false, silenced: !!pData.silenced },
+      1: modeId === 'tdm' ? this.createWeaponSlotItem(CS.WEAPONS[tdmRifleId]) : null,
+      2: this.createWeaponSlotItem(pData, isZombieMode ? { reserve: 60 } : {}),
       3: { id: 'knife' },
       4: modeId === 'practice' ? ['he', 'flash', 'smoke', 'molotov'] : [],
       5: null
@@ -412,19 +441,23 @@ class TacticalGame {
       this.equipArmsRaceWeapon();
     }
 
-    // Spawn AI Bots (Teammates & Enemies)
-    const botCountPerTeam = CS.ui.profile.settings.botCount ?? 4;
-    let nameIdx = 0;
-    // Allies
-    for (let i = 0; i < botCountPerTeam; i++) {
-      const bName = CS.BOT_NAMES[nameIdx++ % CS.BOT_NAMES.length];
-      this.bots.push(new CS.TacticalBot(`ally_${i}`, bName, playerTeam, this.scene));
-    }
-    // Enemies
-    const enemyTeam = playerTeam === 'CT' ? 'T' : 'CT';
-    for (let i = 0; i <= botCountPerTeam; i++) {
-      const bName = CS.BOT_NAMES[nameIdx++ % CS.BOT_NAMES.length];
-      this.bots.push(new CS.TacticalBot(`enemy_${i}`, bName, enemyTeam, this.scene));
+    if (isZombieMode) {
+      this.initZombieMode();
+    } else {
+      // Spawn AI Bots (Teammates & Enemies)
+      const botCountPerTeam = CS.ui.profile.settings.botCount ?? 4;
+      let nameIdx = 0;
+      // Allies
+      for (let i = 0; i < botCountPerTeam; i++) {
+        const bName = CS.BOT_NAMES[nameIdx++ % CS.BOT_NAMES.length];
+        this.bots.push(new CS.TacticalBot(`ally_${i}`, bName, playerTeam, this.scene));
+      }
+      // Enemies
+      const enemyTeam = playerTeam === 'CT' ? 'T' : 'CT';
+      for (let i = 0; i <= botCountPerTeam; i++) {
+        const bName = CS.BOT_NAMES[nameIdx++ % CS.BOT_NAMES.length];
+        this.bots.push(new CS.TacticalBot(`enemy_${i}`, bName, enemyTeam, this.scene));
+      }
     }
 
     // Switch UI & Canvases from Lobby to In-Game 3D Match
@@ -473,6 +506,7 @@ class TacticalGame {
     if (document.pointerLockElement) {
       try { document.exitPointerLock(); } catch (e) {}
     }
+    this.cleanupZombieBoxes();
 
     document.getElementById('hud-screen')?.classList.add('hidden');
     document.getElementById('death-screen-overlay')?.classList.add('hidden');
@@ -493,14 +527,27 @@ class TacticalGame {
     this.clearRoundEntities();
 
     const isBombMode = this.currentMode === 'bomb';
+    const isZombieMode = this.currentMode === 'zombies';
     this.roundPhase = 'live';
     this.phaseTimer = this.modeConfig.roundTime || 300; // 5:00 minutes per round
     this.buyZoneTimer = this.modeConfig.buyTime || 300;
     document.getElementById('round-end-overlay')?.classList.add('hidden');
     document.getElementById('death-screen-overlay')?.classList.add('hidden');
 
-    // Spawn Player at a varied spawn point with 5.0s Spawn Shield
-    const pSpawns = CS.mapBuilder.spawns[this.player.team] || [];
+    // In Bomb Best-of-3: if player died in previous round, reset primary rifle & defuse kit, ensure minimum loss money
+    if (isBombMode && this.roundNumber > 1) {
+      if (this._playerDiedLastRound) {
+        this.player.slots[1] = null;
+        this.player.hasDefuseKit = false;
+        this.player.money = Math.max(this.player.money, 1200);
+      }
+      this._playerDiedLastRound = false;
+    }
+
+    // Spawn Player at a varied spawn point with Spawn Shield
+    const pSpawns = isZombieMode
+      ? (CS.mapBuilder.spawns.CT || CS.mapBuilder.spawns.DM || [])
+      : (CS.mapBuilder.spawns[this.player.team] || []);
     const playerSpawnIdx = Math.floor(Math.random() * pSpawns.length);
     const sp = pSpawns[playerSpawnIdx] || { x: 0, y: 0, z: -62, rotY: Math.PI };
     this._allTsDeadPlantedNotified = false;
@@ -522,10 +569,10 @@ class TacticalGame {
     this.player.clutchSituation = 0;
     this.player.pickupCooldown = 0;
     this.player.health = 100;
-    this.player.armor = 100;
-    this.player.hasHelmet = true;
-    this.player.spawnShieldMax = 5.0;
-    this.player.spawnShieldTimer = 5.0;
+    this.player.armor = isZombieMode ? 25 : 100;
+    this.player.hasHelmet = !isZombieMode;
+    this.player.spawnShieldMax = isZombieMode ? 3.0 : 5.0;
+    this.player.spawnShieldTimer = this.player.spawnShieldMax;
     this.player.flashedAlpha = 0;
     this.player.plantingProgress = 0;
     this.player.defusingProgress = 0;
@@ -546,8 +593,14 @@ class TacticalGame {
     [1, 2].forEach(slotNum => {
       const item = this.player.slots[slotNum];
       if (item && CS.WEAPONS[item.id]) {
-        item.mag = CS.WEAPONS[item.id].magSize;
-        item.reserve = CS.WEAPONS[item.id].reserveAmmo;
+        const wD = CS.WEAPONS[item.id];
+        const mods = this.getSlotModSummary(item, wD);
+        item.maxMag = mods.magSize;
+        item.maxReserve = mods.reserveAmmo;
+        item.mag = mods.magSize;
+        item.reserve = isZombieMode && slotNum === 2 && item.id === 'glock' && !item.overclocked
+          ? Math.max(60, mods.reserveAmmo - wD.reserveAmmo + 60)
+          : mods.reserveAmmo;
       }
     });
 
@@ -566,6 +619,13 @@ class TacticalGame {
       }
     }
 
+    if (isZombieMode) {
+      const bestSlot = this.player.slots[1] ? 1 : 2;
+      this.switchSlot(bestSlot);
+      this.startZombieWave(1);
+      return;
+    }
+
     // Spawn Bots across varied spawn points (including DM points in respawn modes!)
     let ctOffset = Math.floor(Math.random() * 10);
     let tOffset = Math.floor(Math.random() * 10);
@@ -580,7 +640,10 @@ class TacticalGame {
 
     const bestSlot = this.player.slots[1] ? 1 : 2;
     this.switchSlot(bestSlot);
-    this.showBanner(`RUNDE ${this.roundNumber}`, isBombMode ? 'KAUFPHASE AKTIV — DRÜCKE [B] FÜR WAFFEN & GRANATEN' : this.modeConfig.name);
+    const bannerSub = isBombMode
+      ? `BEST OF 3 (CT ${this.scores.CT} : ${this.scores.T} T) — DRÜCKE [B] ZUM KAUFEN`
+      : this.modeConfig.name;
+    this.showBanner(`RUNDE ${this.roundNumber}${isBombMode ? ' / 3' : ''}`, bannerSub);
   }
 
   clearRoundEntities() {
@@ -602,12 +665,21 @@ class TacticalGame {
     if (this.droppedBomb.mesh) this.scene.remove(this.droppedBomb.mesh);
     this.droppedBomb.active = false;
     this.droppedBomb.mesh = null;
+
+    if (this.zombieState?.powerups?.length) {
+      this.zombieState.powerups.forEach(pu => {
+        if (pu.mesh) this.scene.remove(pu.mesh);
+        if (pu.light) this.scene.remove(pu.light);
+      });
+      this.zombieState.powerups = [];
+    }
   }
 
   endRound(winningTeam, reasonText) {
     if (this.roundPhase === 'ended') return;
     this.roundPhase = 'ended';
     this.buyMenuOpen = false;
+    this._playerDiedLastRound = this.player.dead;
     document.getElementById('buy-menu-overlay')?.classList.add('hidden');
     document.getElementById('death-screen-overlay')?.classList.add('hidden');
     document.getElementById('interaction-prompt')?.classList.add('hidden');
@@ -625,13 +697,19 @@ class TacticalGame {
     CS.ui.recordRoundEnd(playerWon, this.currentMap);
 
     // Economy & Lobby Credits / XP Rewards!
-    const roundMoneyBonus = playerWon ? 1100 : 600;
+    const roundMoneyBonus = this.currentMode === 'bomb'
+      ? (playerWon ? 1600 : 1200)
+      : (playerWon ? 1100 : 600);
     this.player.money = Math.min(16000, this.player.money + roundMoneyBonus);
     this.bots.forEach(b => {
-      b.money = Math.min(16000, b.money + (b.team === winningTeam ? 1100 : 600));
+      b.money = Math.min(16000, b.money + (b.team === winningTeam ? roundMoneyBonus : 1100));
     });
 
     const isPractice = this.currentMode === 'practice';
+    const isBombBo3 = this.currentMode === 'bomb';
+    const winTarget = this.modeConfig?.winRounds || 2;
+    const isBo3Over = isBombBo3 && (this.scores.CT >= winTarget || this.scores.T >= winTarget);
+
     const baseRoundCR = isPractice ? (playerWon ? 4 : 2) : (playerWon ? 10 : 4);
     let creditReward = Math.max(1, Math.round(baseRoundCR * this.getCreditMultiplier()));
     const diffData = this.getDifficultyData();
@@ -645,7 +723,18 @@ class TacticalGame {
     const baseOutcomeXP = isPractice ? (playerWon ? 60 : 35) : (playerWon ? 180 : 80);
     const baseKillsXP = rKills * 45;
     const baseHSXP = rHS * 20;
-    const rawTotalXP = baseOutcomeXP + baseKillsXP + baseHSXP + rBombXP;
+    let rawTotalXP = baseOutcomeXP + baseKillsXP + baseHSXP + rBombXP;
+
+    // Best-of-3 Match Completion Bonus!
+    let matchBonusCR = 0;
+    let matchBonusXP = 0;
+    if (isBo3Over) {
+      matchBonusCR = Math.max(4, Math.round((playerWon ? 15 : 5) * this.getCreditMultiplier()));
+      matchBonusXP = playerWon ? 150 : 50;
+      creditReward += matchBonusCR;
+      rawTotalXP += matchBonusXP;
+    }
+
     const xpReward = Math.max(15, Math.round(rawTotalXP * xpMult));
 
     // Award Clutch Bonus if player won a 1v2+ situation in Bomb mode!
@@ -661,7 +750,10 @@ class TacticalGame {
       );
     }
 
-    CS.ui.addCredits(creditReward, `${playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen'} (${diffData.name} • ${diffData.badge})`);
+    const rewardTitle = isBo3Over
+      ? (playerWon ? '🏆 Best-of-3 Match gewonnen!' : 'Best-of-3 Match beendet')
+      : (playerWon ? 'Runde gewonnen!' : 'Runde abgeschlossen');
+    CS.ui.addCredits(creditReward, `${rewardTitle} (${diffData.name} • ${diffData.badge})`);
     CS.ui.addXP(xpReward);
     const newRank = CS.ui.getRankInfo();
     const leveledUp = newRank.level > prevRank.level;
@@ -672,18 +764,54 @@ class TacticalGame {
 
     CS.audio.announce(winningTeam === 'CT' ? 'Counter-Terrorists Win' : 'Terrorists Win');
 
-    // Populate & Open Round-End Choice Modal ("Noch eine Runde spielen" vs "Zurück ins Menü")
+    // Populate & Open Round-End Choice Modal
     const titleEl = document.getElementById('round-end-title');
     const reasonEl = document.getElementById('round-end-reason');
     const scoreEl = document.getElementById('round-end-score');
     const kdEl = document.getElementById('round-end-kd');
     const crEl = document.getElementById('round-end-credits');
+    const promptEl = document.getElementById('round-end-prompt');
+    const nextBtn = document.getElementById('btn-play-next-round');
 
-    if (titleEl) {
-      titleEl.textContent = winningTeam === 'CT' ? '🛡️ COUNTER-TERRORISTS GEWINNEN!' : '⚔️ TERRORISTEN GEWINNEN!';
-      titleEl.style.color = winningTeam === 'CT' ? '#38bdf8' : '#fbbf24';
+    if (isBo3Over) {
+      this._nextClickStartsNewMatch = true;
+      if (titleEl) {
+        titleEl.textContent = playerWon ? '🏆 BEST-OF-3 MATCH GEWONNEN!' : '💀 BEST-OF-3 MATCH VERLOREN!';
+        titleEl.style.color = playerWon ? '#4ade80' : '#f87171';
+      }
+      if (reasonEl) {
+        reasonEl.textContent = `${reasonText} • Endstand CT ${this.scores.CT} : ${this.scores.T} T (+${matchBonusCR} Match-Bonus CR)`;
+      }
+      if (promptEl) promptEl.textContent = 'Best-of-3 Match beendet! Starte ein neues Bo3-Match oder öffne Kisten im Hauptmenü.';
+      if (nextBtn) nextBtn.textContent = '🔄 NEUES BEST-OF-3 MATCH STARTEN';
+    } else if (isBombBo3) {
+      this._nextClickStartsNewMatch = false;
+      const isDecider = this.scores.CT === 1 && this.scores.T === 1;
+      if (titleEl) {
+        titleEl.textContent = winningTeam === 'CT' ? '🛡️ CT GEWINNEN RUNDE!' : '⚔️ TERRORISTEN GEWINNEN RUNDE!';
+        titleEl.style.color = winningTeam === 'CT' ? '#38bdf8' : '#fbbf24';
+      }
+      if (reasonEl) {
+        const surviveNote = !this.player.dead ? 'Waffe behalten!' : 'Neukauf nötig';
+        reasonEl.textContent = `${reasonText} • (+$${roundMoneyBonus} • ${surviveNote} • Best of 3)`;
+      }
+      if (promptEl) promptEl.textContent = `Best-of-3 Match läuft (Wer zuerst ${winTarget} Runden gewinnt, siegt).`;
+      if (nextBtn) {
+        nextBtn.textContent = isDecider
+          ? '🔥 DECIDER-RUNDE (3 / 3) STARTEN!'
+          : `▶ RUNDE ${this.roundNumber + 1} / 3 STARTEN`;
+      }
+    } else {
+      this._nextClickStartsNewMatch = false;
+      if (titleEl) {
+        titleEl.textContent = winningTeam === 'CT' ? '🛡️ COUNTER-TERRORISTS GEWINNEN!' : '⚔️ TERRORISTEN GEWINNEN!';
+        titleEl.style.color = winningTeam === 'CT' ? '#38bdf8' : '#fbbf24';
+      }
+      if (reasonEl) reasonEl.textContent = `${reasonText} (+$${roundMoneyBonus} Match-Geld • KI: ${diffData.name})`;
+      if (promptEl) promptEl.textContent = 'Möchtest du noch eine 5-Minuten-Runde spielen oder zurück ins Hauptmenü?';
+      if (nextBtn) nextBtn.textContent = '🔄 NOCH EINE RUNDE SPIELEN (5 MIN)';
     }
-    if (reasonEl) reasonEl.textContent = `${reasonText} (+$${roundMoneyBonus} Match-Geld • KI: ${diffData.name})`;
+
     if (scoreEl) scoreEl.textContent = `CT ${this.scores.CT} : ${this.scores.T} T`;
     if (kdEl) kdEl.textContent = `${rKills} (${this.player.kills} Ges.) / ${this.player.deaths}`;
     if (crEl) crEl.textContent = `+${creditReward} CR (${diffData.creditMult}x)`;
@@ -709,6 +837,7 @@ class TacticalGame {
       ];
       if (rHS > 0) parts.push(`💀 Kopfschüsse (${rHS}): +${baseHSXP} XP`);
       if (rBombXP > 0) parts.push(`💣 Bombe: +${rBombXP} XP`);
+      if (matchBonusXP > 0) parts.push(`🏅 Bo3-Match: +${matchBonusXP} XP`);
       xpBreakEl.innerHTML = parts.join(' &bull; ');
     }
     if (xpFillEl) {
@@ -758,6 +887,85 @@ class TacticalGame {
     return CS.WEAPONS[slotObj.id] || CS.WEAPONS.knife;
   }
 
+  getSlotModSummary(slotObj, wData = null) {
+    const wd = wData || (slotObj && CS.WEAPONS[slotObj.id]) || this.getActiveWeaponData();
+    const atts = CS.ui?.getEquippedAttachments ? CS.ui.getEquippedAttachments(wd.id) : [];
+    const oc = !!(slotObj && slotObj.overclocked);
+    return CS.getWeaponModSummary
+      ? CS.getWeaponModSummary(wd.id, atts, oc)
+      : {
+          isKnife: wd.id === 'knife',
+          active: [],
+          reloadMult: oc ? 0.78 : 1,
+          drawMult: 1,
+          magSize: oc ? Math.round((wd.magSize || 30) * 1.5) : (wd.magSize || 0),
+          reserveAmmo: oc ? Math.round((wd.reserveAmmo || 90) * 2) : (wd.reserveAmmo || 0),
+          scopeLevels: wd.scopeLevels || null,
+          isHoloOptic: false,
+          hasOptic: false,
+          damageMult: oc ? 1.65 : 1,
+          recoilMult: 1,
+          spreadMult: 1,
+          unscopedSpreadMult: 1,
+          headMultBonus: 1,
+          cooldownMult: 1,
+          reachMult: 1,
+          moveSpeedMult: 1
+        };
+  }
+
+  createWeaponSlotItem(wData, overrides = {}) {
+    const oc = !!overrides.overclocked;
+    const mods = this.getSlotModSummary({ id: wData.id, overclocked: oc }, wData);
+    return {
+      id: wData.id,
+      mag: overrides.mag ?? mods.magSize,
+      maxMag: mods.magSize,
+      reserve: overrides.reserve ?? mods.reserveAmmo,
+      maxReserve: mods.reserveAmmo,
+      burstMode: false,
+      silenced: !!wData.silenced,
+      ...overrides
+    };
+  }
+
+  onWeaponUpgradeUnlocked(weaponId, tier) {
+    [1, 2].forEach(slotNum => {
+      const slotItem = this.player.slots[slotNum];
+      if (slotItem && slotItem.id === weaponId && CS.WEAPONS[weaponId]) {
+        const mods = this.getSlotModSummary(slotItem, CS.WEAPONS[weaponId]);
+        const magDiff = Math.max(0, mods.magSize - (slotItem.maxMag || CS.WEAPONS[weaponId].magSize));
+        const resDiff = Math.max(0, mods.reserveAmmo - (slotItem.maxReserve || CS.WEAPONS[weaponId].reserveAmmo));
+        slotItem.maxMag = mods.magSize;
+        slotItem.maxReserve = mods.reserveAmmo;
+        if (magDiff > 0) slotItem.mag += magDiff;
+        if (resDiff > 0) slotItem.reserve += resDiff;
+      }
+    });
+    const curWep = this.getActiveWeaponData();
+    if (curWep && curWep.id === weaponId) {
+      this.rebuildViewmodel();
+    }
+    this.updateHUD();
+  }
+
+  toggleWeaponFireOrSilencer() {
+    const wData = this.getActiveWeaponData();
+    const slotObj = this.player.slots[this.player.activeSlot];
+    if (!slotObj) return;
+    if (wData.burstCapable) {
+      slotObj.burstMode = !slotObj.burstMode;
+      CS.audio.playUISound('click');
+      CS.ui.showToast(`${wData.name}: ${slotObj.burstMode ? '3-Schuss Feuerstoß' : 'Einzelfeuer / Automatik'}`, 'info');
+      this.updateHUD();
+    } else if (wData.canToggleSilencer) {
+      slotObj.silenced = !slotObj.silenced;
+      CS.audio.playReloadStep('bolt');
+      CS.ui.showToast(`${wData.name}: Schalldämpfer ${slotObj.silenced ? 'montiert' : 'abgenommen'}`, 'info');
+      this.rebuildViewmodel();
+    }
+  }
+
   switchSlot(slotNum) {
     if (slotNum === 4) {
       const gList = this.player.slots[4];
@@ -779,7 +987,10 @@ class TacticalGame {
 
     this.player.reloading = false;
     this.player.inspectTimer = 0;
-    this.player.drawTimer = 0.36;
+    const activeWep = this.getActiveWeaponData();
+    const activeSlotObj = this.player.slots[this.player.activeSlot];
+    const mods = this.getSlotModSummary(activeSlotObj, activeWep);
+    this.player.drawTimer = 0.36 * (mods.drawMult || 1.0);
     this.setScope(-1);
     CS.audio.playUISound('click');
     this.rebuildViewmodel();
@@ -796,8 +1007,9 @@ class TacticalGame {
     const knifeModelId = CS.ui.profile.equippedKnife || 'knife_default';
     const gloveId = CS.ui.profile.equippedGlove || 'gloves_default';
     const outfitId = CS.ui.profile.equippedOutfit || 'sas_navy';
+    const attachments = CS.ui?.getEquippedAttachments ? CS.ui.getEquippedAttachments(wData.id) : [];
 
-    const model = CS.weaponBuilder.buildWeaponModel(wData.id, skinId, knifeModelId, gloveId, outfitId, true);
+    const model = CS.weaponBuilder.buildWeaponModel(wData.id, skinId, knifeModelId, gloveId, outfitId, true, attachments);
 
     // Check if silencer is detached on USP-S / M4A1-S
     if (slotObj && wData.canToggleSilencer && slotObj.silenced === false) {
@@ -821,11 +1033,13 @@ class TacticalGame {
     const slotObj = this.player.slots[s];
     if (!slotObj) return;
     const wData = CS.WEAPONS[slotObj.id];
-    if (!wData || slotObj.mag >= wData.magSize || slotObj.reserve <= 0 || this.player.reloading) return;
+    const mods = this.getSlotModSummary(slotObj, wData);
+    const maxMag = slotObj.maxMag || mods.magSize || wData?.magSize || 30;
+    if (!wData || slotObj.mag >= maxMag || slotObj.reserve <= 0 || this.player.reloading) return;
 
     this.setScope(-1);
     this.player.reloading = true;
-    this.player.reloadDuration = wData.reloadTime || 2.3;
+    this.player.reloadDuration = (wData.reloadTime || 2.3) * (mods.reloadMult || 1.0);
     this.player.reloadTimer = this.player.reloadDuration;
     this.player.inspectTimer = 0;
 
@@ -843,7 +1057,8 @@ class TacticalGame {
     const slotObj = this.player.slots[s];
     if (!slotObj) return;
     const wData = CS.WEAPONS[slotObj.id];
-    const needed = wData.magSize - slotObj.mag;
+    const maxMag = slotObj.maxMag || wData.magSize;
+    const needed = maxMag - slotObj.mag;
     const take = Math.min(needed, slotObj.reserve);
     slotObj.mag += take;
     slotObj.reserve -= take;
@@ -854,11 +1069,19 @@ class TacticalGame {
   handleRightClick() {
     const wData = this.getActiveWeaponData();
     const slotObj = this.player.slots[this.player.activeSlot];
+    const mods = this.getSlotModSummary(slotObj, wData);
 
-    // 1. Scoped Rifles / Snipers (AWP, SSG 08, AUG)
-    if (wData.scopeLevels && wData.scopeLevels.length > 0) {
+    // 1. Scoped Rifles / Snipers (toggle) vs Unlocked Reflex-Visier (hold right-click to ADS)
+    if (mods.scopeLevels && mods.scopeLevels.length > 0) {
+      if (mods.isHoloOptic) {
+        if (this.player.scopeIndex !== 0 && !this.player.reloading) {
+          this.setScope(0);
+          CS.audio.playUISound('click');
+        }
+        return;
+      }
       const nextIdx = this.player.scopeIndex + 1;
-      if (nextIdx >= wData.scopeLevels.length) {
+      if (nextIdx >= mods.scopeLevels.length) {
         this.setScope(-1);
       } else {
         this.setScope(nextIdx);
@@ -881,37 +1104,50 @@ class TacticalGame {
 
     // 4. Burst Fire Toggle (Glock-18 / FAMAS)
     if (wData.burstCapable && slotObj) {
-      slotObj.burstMode = !slotObj.burstMode;
-      CS.audio.playUISound('click');
-      CS.ui.showToast(`${wData.name}: ${slotObj.burstMode ? '3-Schuss Feuerstoß' : 'Einzelfeuer / Automatik'}`, 'info');
-      this.updateHUD();
+      this.toggleWeaponFireOrSilencer();
       return;
     }
 
     // 5. Detachable Silencer Toggle (USP-S / M4A1-S)
     if (wData.canToggleSilencer && slotObj) {
-      slotObj.silenced = !slotObj.silenced;
-      CS.audio.playReloadStep('bolt');
-      CS.ui.showToast(`${wData.name}: Schalldämpfer ${slotObj.silenced ? 'montiert' : 'abgenommen'}`, 'info');
-      this.rebuildViewmodel();
+      this.toggleWeaponFireOrSilencer();
+    }
+  }
+
+  handleRightClickRelease() {
+    if (!this.running || this.player.dead || this.player.scopeIndex < 0) return;
+    const wData = this.getActiveWeaponData();
+    const slotObj = this.player.slots[this.player.activeSlot];
+    const mods = this.getSlotModSummary(slotObj, wData);
+    // For weapons without a native scope (unlocked Holo/Reflex optic), releasing RMB exits ADS
+    if (mods.isHoloOptic) {
+      this.setScope(-1);
     }
   }
 
   setScope(levelIdx) {
     this.player.scopeIndex = levelIdx;
     const wData = this.getActiveWeaponData();
+    const slotObj = this.player.slots[this.player.activeSlot];
+    const mods = this.getSlotModSummary(slotObj, wData);
     const scopeOverlay = document.getElementById('scope-overlay');
-    if (levelIdx >= 0 && wData.scopeLevels && wData.scopeLevels[levelIdx]) {
-      const zoom = wData.scopeLevels[levelIdx];
+    if (levelIdx >= 0 && mods.scopeLevels && mods.scopeLevels[levelIdx]) {
+      const zoom = mods.scopeLevels[levelIdx];
       this.camera.fov = 75 / zoom;
       this.camera.updateProjectionMatrix();
-      if (scopeOverlay) scopeOverlay.classList.remove('hidden');
+      if (scopeOverlay) {
+        scopeOverlay.classList.remove('hidden');
+        scopeOverlay.classList.toggle('holo-mode', !!mods.isHoloOptic);
+      }
       this.viewmodelGroup.visible = false;
     } else {
       this.player.scopeIndex = -1;
       this.camera.fov = 75;
       this.camera.updateProjectionMatrix();
-      if (scopeOverlay) scopeOverlay.classList.add('hidden');
+      if (scopeOverlay) {
+        scopeOverlay.classList.add('hidden');
+        scopeOverlay.classList.remove('holo-mode');
+      }
       this.viewmodelGroup.visible = true;
     }
   }
@@ -932,7 +1168,8 @@ class TacticalGame {
 
     // Knife Attack
     if (wData.id === 'knife') {
-      this.player.fireCooldown = isHeavySecondary ? 0.75 : 0.42;
+      const kMods = this.getSlotModSummary(null, wData);
+      this.player.fireCooldown = (isHeavySecondary ? 0.75 : 0.42) * (kMods.cooldownMult || 1.0);
       this.player.recoilKick = isHeavySecondary ? 0.16 : 0.09;
       CS.audio.playGunshot('knife');
       this.performKnifeHit(wData, isHeavySecondary);
@@ -988,13 +1225,14 @@ class TacticalGame {
       }
     }
 
-    // Calculate Dynamic Spread (Movement + Crouch + Scope + Recoil)
+    // Calculate Dynamic Spread (Movement + Crouch + Scope + Recoil + Upgrades)
+    const mods = this.getSlotModSummary(slotObj, wData);
     const horizSpeed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
-    let spread = wData.spreadBase + (horizSpeed / 6.5) * wData.spreadMove;
+    let spread = (wData.spreadBase + (horizSpeed / 6.5) * wData.spreadMove) * (mods.spreadMult || 1.0);
     if (this.player.crouching) spread *= 0.58;
     if (!this.player.onGround) spread += 0.085;
     if (wData.scopeLevels && this.player.scopeIndex < 0 && wData.spreadUnscoped) {
-      spread = wData.spreadUnscoped + (horizSpeed / 6.5) * wData.spreadMove;
+      spread = (wData.spreadUnscoped * (mods.unscopedSpreadMult || 1.0)) + (horizSpeed / 6.5) * wData.spreadMove;
     } else if (this.player.scopeIndex >= 0) {
       spread *= 0.25;
     }
@@ -1008,9 +1246,10 @@ class TacticalGame {
     this.spawnShellCasing(wData);
 
     // Apply Controlled CS Recoil Kick (low & smooth so spraying feels responsive)
-    this.player.recoilKick = Math.min(0.068, this.player.recoilKick + 0.022);
-    const upKick = wData.recoilUp * (this.player.crouching ? 0.65 : 1.0);
-    const sideKick = (Math.random() - 0.5) * 2 * wData.recoilSide;
+    const recMult = mods.recoilMult || 1.0;
+    this.player.recoilKick = Math.min(0.068, this.player.recoilKick + 0.022 * recMult);
+    const upKick = wData.recoilUp * (this.player.crouching ? 0.65 : 1.0) * recMult;
+    const sideKick = (Math.random() - 0.5) * 2 * wData.recoilSide * recMult;
     const maxRecoilPitch = 0.055; // Cap total upward climb so bullets stay near crosshair
     const appliedUp = Math.max(0, Math.min(upKick, maxRecoilPitch - this.player.recoilPitchAccum));
     this.player.pitch = Math.min(Math.PI / 2 - 0.04, this.player.pitch + appliedUp);
@@ -1059,6 +1298,9 @@ class TacticalGame {
     const hits = this.raycaster.intersectObjects(targets, false);
     let endPt = origin.clone().addScaledVector(dir, wData.range || 150);
 
+    const activeSlotObj = this.player.slots[this.player.activeSlot];
+    const isOverclocked = !!(activeSlotObj && activeSlotObj.overclocked);
+
     if (hits.length > 0) {
       let hit = hits[0];
       // If first hit is a bot's arm/chest, check if the same ray also pierced that bot's head right behind the raised arm
@@ -1081,19 +1323,24 @@ class TacticalGame {
         if (bot.team !== this.player.team) {
           const part = hit.object.userData.hitboxPart || 'chest';
           const isHead = part === 'head';
-          const mult = isHead ? (wData.headMult || 3.5) : (part === 'legs' ? 0.75 : 1.0);
-          const dmg = wData.damage * mult * (bot.armor > 0 ? wData.armorPen : 1.0);
+          const mods = this.getSlotModSummary(activeSlotObj, wData);
+          const headScale = (wData.headMult || 3.5) * (mods.headMultBonus || 1.0);
+          const mult = isHead ? headScale : (part === 'legs' ? 0.75 : 1.0);
+          let dmg = wData.damage * mult * (bot.armor > 0 ? wData.armorPen : 1.0) * (mods.damageMult || 1.0);
 
           CS.ui.recordShotHit(wData.id, dmg, isHead, !this._currentShotHitRecorded);
           this._currentShotHitRecorded = true;
 
           CS.audio.playHitmarker(isHead);
           this.flashHitmarkerUI(isHead);
-          this.spawnImpactParticles(hit.point, isHead ? 0xffdd00 : 0xef4444, isHead ? 12 : 7);
+          this.spawnImpactParticles(hit.point, isHead ? 0xffdd00 : (bot.isZombie ? 0x84cc16 : 0xef4444), isHead ? 12 : 7);
 
           const killed = bot.takeDamage(dmg, this.player, isHead);
           if (killed) {
             this.onEntityKilled(this.player, bot, wData.id, isHead);
+          } else if (bot.isZombie) {
+            const ptsMult = (this.zombieState?.doublePointsTimer > 0) ? 2 : 1;
+            this.player.money = Math.min(99999, this.player.money + 10 * ptsMult);
           }
         }
       } else {
@@ -1105,16 +1352,17 @@ class TacticalGame {
 
     if (showTracer) {
       const startPt = origin.clone().add(new THREE.Vector3(0.14, -0.1, -0.35).applyEuler(euler));
-      this.spawnTracer(startPt, endPt);
+      this.spawnTracer(startPt, endPt, isOverclocked ? 0x00f0ff : 0xffe066);
     }
   }
 
   performKnifeHit(wData, isHeavy) {
     CS.ui.recordShotFired('knife');
+    const kMods = this.getSlotModSummary(null, wData);
     const euler = new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ');
     const dir = new THREE.Vector3(0, 0, -1).applyEuler(euler);
     this.raycaster.set(this.camera.position, dir);
-    this.raycaster.far = 3.2;
+    this.raycaster.far = 3.2 * (kMods.reachMult || 1.0);
 
     const botHitboxes = [];
     for (const b of this.bots) {
@@ -1130,17 +1378,20 @@ class TacticalGame {
         // Check backstab angle
         const botForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), bot.yaw);
         const isBackstab = dir.dot(botForward) > 0.35;
-        const dmg = isBackstab ? wData.backstabDamage : (isHeavy ? wData.heavyDamage : wData.damage);
+        const dmg = Math.round((isBackstab ? wData.backstabDamage : (isHeavy ? wData.heavyDamage : wData.damage)) * (kMods.damageMult || 1.0));
 
         CS.ui.recordShotHit('knife', dmg, isBackstab, true);
 
         CS.audio.playHitmarker(isBackstab);
         this.flashHitmarkerUI(isBackstab);
-        this.spawnImpactParticles(hits[0].point, 0xef4444, 10);
+        this.spawnImpactParticles(hits[0].point, bot.isZombie ? 0x65a30d : 0xef4444, 10);
 
         const killed = bot.takeDamage(dmg, this.player, isBackstab);
         if (killed) {
           this.onEntityKilled(this.player, bot, 'knife', isBackstab);
+        } else if (bot.isZombie) {
+          const ptsMult = (this.zombieState?.doublePointsTimer || 0) > 0 ? 2 : 1;
+          this.player.money += 10 * ptsMult;
         }
       }
     }
@@ -1496,7 +1747,36 @@ class TacticalGame {
     const isPlayerKiller = killer === this.player;
     const isPlayerVictim = victim === this.player;
 
-    const killerName = isPlayerKiller ? CS.ui.profile.playerName : (killer ? `BOT ${killer.name}` : 'Explosion');
+    if (victim && victim.isZombie) {
+      if (isPlayerKiller) {
+        this.player.kills++;
+        this.player.roundKills = (this.player.roundKills || 0) + 1;
+        if (isHeadshot) this.player.roundHeadshots = (this.player.roundHeadshots || 0) + 1;
+        const ptsMult = (this.zombieState?.doublePointsTimer > 0) ? 2 : 1;
+        const isBrute = victim.variant === 'brute';
+        let zMoney = isBrute ? 200 : 70;
+        if (isHeadshot) zMoney += 35;
+        if (weaponId === 'knife') zMoney += 50;
+        this.player.money = Math.min(99999, this.player.money + zMoney * ptsMult);
+
+        const crKill = Math.max(1, Math.round((isBrute ? 6 : (isHeadshot ? 3 : 2)) * this.getCreditMultiplier()));
+        CS.ui.addCredits(crKill, isBrute ? '🧟 Brute-Boss eliminiert!' : '');
+        CS.ui.recordKill(weaponId, isHeadshot, this.player.roundKills);
+        CS.ui.recordZombieStats({ wave: this.zombieState?.wave || 1, killsAdd: 1 });
+        CS.ui.addKillfeedEntry(CS.ui.profile.playerName, this.player.team, victim.name, 'T', weaponId, isHeadshot);
+      }
+      if (this.zombieState) {
+        this.zombieState.zombiesKilledInWave++;
+        const dropChance = victim.variant === 'brute' ? 1.0 : 0.14;
+        if (Math.random() < dropChance) {
+          this.spawnZombiePowerup(victim.position);
+        }
+      }
+      this.updateHUD();
+      return;
+    }
+
+    const killerName = isPlayerKiller ? CS.ui.profile.playerName : (killer ? (killer.isZombie ? killer.name : `BOT ${killer.name}`) : 'Explosion');
     const victimName = isPlayerVictim ? CS.ui.profile.playerName : `BOT ${victim.name}`;
 
     CS.ui.addKillfeedEntry(killerName, killer ? killer.team : victim.team, victimName, victim.team, weaponId, isHeadshot);
@@ -1582,10 +1862,10 @@ class TacticalGame {
       CS.ui.showToast('🏆 GOLDENES MESSER ERREICHT! Mache den letzten Kill für den Sieg!', 'gold');
     } else if (wData.slot === 2) {
       this.player.slots[1] = null;
-      this.player.slots[2] = { id: wId, mag: wData.magSize, reserve: wData.reserveAmmo, burstMode: false, silenced: !!wData.silenced };
+      this.player.slots[2] = this.createWeaponSlotItem(wData);
       this.switchSlot(2);
     } else {
-      this.player.slots[1] = { id: wId, mag: wData.magSize, reserve: wData.reserveAmmo, burstMode: false, silenced: !!wData.silenced };
+      this.player.slots[1] = this.createWeaponSlotItem(wData);
       this.switchSlot(1);
     }
   }
@@ -1647,6 +1927,19 @@ class TacticalGame {
 
       this.player.respawnTimer = this.modeConfig.respawnDelay || 2.8;
       CS.audio.playDeathSound(isHeadshot);
+
+      if (this.currentMode === 'zombies') {
+        const zKiller = attacker || { name: 'Untote Horde', weaponId: 'knife', skinId: 'default' };
+        this.showDeathOverlay(zKiller, 'knife', 'default', false);
+        CS.ui.recordDeath();
+        setTimeout(() => {
+          if (this.running && this.currentMode === 'zombies' && this.roundPhase !== 'ended') {
+            this.endZombieRun();
+          }
+        }, 1600);
+        this.updateHUD();
+        return;
+      }
 
       const killerWepId = attacker?.weaponId || 'ak47';
       const killerSkinId = attacker?.skinId || 'default';
@@ -1734,25 +2027,42 @@ class TacticalGame {
     }
 
     const existing = this.player.slots[w.slot];
-    if (existing && existing.id === w.id && existing.mag === w.magSize && existing.reserve === w.reserveAmmo) {
+    const mods = this.getSlotModSummary(existing, w);
+    if (existing && existing.id === w.id && existing.mag === mods.magSize && existing.reserve === mods.reserveAmmo) {
       CS.ui.showToast(`${w.name} ist bereits ausgerüstet und voll geladen!`, 'info');
       return;
     }
 
     this.player.money -= w.price;
-    this.player.slots[w.slot] = {
-      id: w.id,
-      mag: w.magSize,
-      reserve: w.reserveAmmo,
-      burstMode: false,
-      silenced: !!w.silenced
-    };
+    this.player.slots[w.slot] = this.createWeaponSlotItem(w);
     CS.audio.playUISound('buy');
     this.switchSlot(w.slot);
   }
 
   buySpecialGear(gearType) {
-    if (gearType === 'kevlar') {
+    if (gearType === 'ammo_refill') {
+      if (this.player.money < 350) return CS.ui.showToast('Nicht genug Geld ($350)!', 'error');
+      let refilled = false;
+      [1, 2].forEach(slotNum => {
+        const item = this.player.slots[slotNum];
+        if (item && CS.WEAPONS[item.id]) {
+          const maxM = item.maxMag || CS.WEAPONS[item.id].magSize;
+          const maxR = item.maxReserve || CS.WEAPONS[item.id].reserveAmmo;
+          if (item.mag < maxM || item.reserve < maxR) {
+            item.mag = maxM;
+            item.reserve = maxR;
+            refilled = true;
+          }
+        }
+      });
+      if (!refilled) return CS.ui.showToast('Alle Waffen sind bereits voll geladen!', 'info');
+      this.player.money -= 350;
+    } else if (gearType === 'medkit') {
+      if (this.player.health >= 100) return CS.ui.showToast('Deine HP sind bereits bei 100!', 'info');
+      if (this.player.money < 400) return CS.ui.showToast('Nicht genug Geld ($400)!', 'error');
+      this.player.money -= 400;
+      this.player.health = Math.min(100, this.player.health + 60);
+    } else if (gearType === 'kevlar') {
       if (this.player.armor >= 100) return CS.ui.showToast('Kevlar-Weste ist bereits bei 100%!', 'info');
       if (this.player.money < 650) return CS.ui.showToast('Nicht genug Geld ($650)!', 'error');
       this.player.money -= 650;
@@ -2183,8 +2493,8 @@ class TacticalGame {
     return hits.length === 0;
   }
 
-  spawnTracer(start, end) {
-    const mat = new THREE.LineBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.85 });
+  spawnTracer(start, end, colorHex = 0xffe066) {
+    const mat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.85 });
     const geo = new THREE.BufferGeometry().setFromPoints([start, end]);
     const line = new THREE.Line(geo, mat);
     this.scene.add(line);
@@ -2256,6 +2566,14 @@ class TacticalGame {
     // Render Live 2D Tactical Radar
     const radarCanvas = document.getElementById('radar-canvas');
     if (radarCanvas) {
+      let zombieCtx = null;
+      if (this.currentMode === 'zombies' && this.zombieState) {
+        const activeBox = this.zombieState.boxes[this.zombieState.activeBoxIdx];
+        zombieCtx = {
+          activeBoxPos: activeBox ? activeBox.position : null,
+          powerups: this.zombieState.powerups || []
+        };
+      }
       CS.mapBuilder.renderRadar(
         radarCanvas.getContext('2d'),
         radarCanvas.width,
@@ -2263,13 +2581,19 @@ class TacticalGame {
         this.player,
         this.bots,
         this.plantedBomb,
-        this.droppedBomb
+        this.droppedBomb,
+        zombieCtx
       );
     }
   }
 
   updateMatchTimers(dt) {
     if (this.roundPhase === 'ended') return;
+
+    if (this.currentMode === 'zombies') {
+      this.updateZombieMode(dt);
+      return;
+    }
 
     if (this.buyZoneTimer > 0) this.buyZoneTimer -= dt;
 
@@ -2425,6 +2749,27 @@ class TacticalGame {
           CS.ui.showToast('🛡️ Spawn-Schild aktiv (5s Unverwundbarkeit)', 'info');
         }
       } else {
+        if (this.currentMode === 'zombies') {
+          this.viewmodelGroup.visible = false;
+          const targetDeadEye = 0.24;
+          this.player.eyeHeight += (targetDeadEye - this.player.eyeHeight) * Math.min(1, dt * 8.5);
+          const targetPitch = -0.22;
+          this.player.pitch += (targetPitch - this.player.pitch) * Math.min(1, dt * 6.5);
+          this.camera.position.set(
+            this.player.position.x,
+            this.player.position.y + this.player.eyeHeight,
+            this.player.position.z
+          );
+          this.camera.rotation.order = 'YXZ';
+          this.camera.rotation.y = this.player.yaw;
+          this.camera.rotation.x = this.player.pitch;
+          this.camera.rotation.z = easeFall * 0.58 * (this.player.deathRollDir || 1);
+          const zWave = this.zombieState?.wave || 1;
+          if (respTextEl) respTextEl.textContent = `🧟 ÜBERRANNT IN WELLE ${zWave}! Auswertung folgt...`;
+          if (respFillEl) respFillEl.style.width = '0%';
+          return;
+        }
+
         // NO RESPAWN (Bomb Defusal Mode): Stay dead until round ends & spectate living agents!
         if (this.player.deathAnimTimer < 1.8) {
           const targetDeadEye = 0.24;
@@ -2529,9 +2874,9 @@ class TacticalGame {
     }
     this.player.recoilKick = Math.max(0, this.player.recoilKick - dt * 0.65);
 
-    // Crouch & Walk States
+    // Crouch & Sprint States
     this.player.crouching = !!(this.keys['ControlLeft'] || this.keys['KeyC']);
-    this.player.walking = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']);
+    const wantsSprint = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']) && !this.player.crouching;
     const targetEye = this.player.crouching ? 1.05 : 1.65;
     this.player.eyeHeight += (targetEye - this.player.eyeHeight) * Math.min(1, dt * 12);
 
@@ -2552,16 +2897,32 @@ class TacticalGame {
 
       if (wishDir.lengthSq() > 0) wishDir.normalize();
 
-      let baseSpeed = 6.6 * (wData.moveSpeed || 0.9);
+      this.player.sprinting = wantsSprint && wishDir.lengthSq() > 0;
+      if (this.player.sprinting && this.player.scopeIndex >= 0) {
+        this.setScope(-1);
+      }
+
+      const activeMods = this.getSlotModSummary(this.player.slots[this.player.activeSlot], wData);
+      let baseSpeed = 6.6 * (wData.moveSpeed || 0.9) * (activeMods.moveSpeedMult || 1.0);
       if (this.player.crouching) baseSpeed *= 0.52;
-      else if (this.player.walking) baseSpeed *= 0.58;
+      else if (this.player.sprinting) baseSpeed *= 1.42;
       if (this.player.scopeIndex >= 0) baseSpeed *= 0.65;
 
       this.player.velocity.x = wishDir.x * baseSpeed;
       this.player.velocity.z = wishDir.z * baseSpeed;
     } else {
+      this.player.sprinting = false;
       this.player.velocity.x = 0;
       this.player.velocity.z = 0;
+    }
+
+    // Dynamic sprint FOV kick when unscoped
+    if (this.player.scopeIndex < 0 && this.camera) {
+      const targetFov = this.player.sprinting ? 81 : 75;
+      if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+        this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 10);
+        this.camera.updateProjectionMatrix();
+      }
     }
 
     // Gravity
@@ -2605,11 +2966,12 @@ class TacticalGame {
       this.player.onGround = false;
     }
 
-    // Footstep Audio (Silent when Shift-walking or Crouching!)
+    // Footstep Audio (Silent only when Crouching!)
     const horizSpd = Math.hypot(this.player.velocity.x, this.player.velocity.z);
-    if (this.player.onGround && horizSpd > 2.2 && !this.player.walking && !this.player.crouching) {
+    if (this.player.onGround && horizSpd > 2.2 && !this.player.crouching) {
       this.player.stepDistance += horizSpd * dt;
-      if (this.player.stepDistance >= 2.35) {
+      const stepStride = this.player.sprinting ? 1.85 : 2.35;
+      if (this.player.stepDistance >= stepStride) {
         this.player.stepDistance = 0;
         CS.audio.playFootstep(floorSurface);
       }
@@ -2736,7 +3098,27 @@ class TacticalGame {
       }
     }
 
-    // 3. Nearby Dropped Weapon Prompt if not planting/defusing C4
+    // 3. Zombie Mode Mystery Box Prompt OR Dropped Weapon Prompt
+    if (!showPrompt && !this.player.dead && this.currentMode === 'zombies' && this.zombieState) {
+      const activeBox = this.zombieState.boxes[this.zombieState.activeBoxIdx];
+      if (activeBox) {
+        const dBox = this.player.position.distanceTo(activeBox.position);
+        if (dBox < 3.4) {
+          const zs = this.zombieState;
+          if (zs.boxState === 'idle') {
+            showPrompt = `📦 Drücke [E] für Waffenkiste ($${CS.ZOMBIE_CONFIG.boxCost}) — Zufällige bessere / ★ Overclocked Waffe!`;
+          } else if (zs.boxState === 'rolling') {
+            showPrompt = `🎲 Waffenkiste würfelt... Viel Glück!`;
+          } else if (zs.boxState === 'ready' && zs.boxRolledWeapon) {
+            const rw = CS.WEAPONS[zs.boxRolledWeapon.id];
+            const ocTag = zs.boxRolledWeapon.overclocked ? ' ★ OVERCLOCKED' : '';
+            showPrompt = `✨ Drücke [E] zum Ausrüsten: ${rw ? rw.name : zs.boxRolledWeapon.id}${ocTag} (${Math.ceil(zs.boxReadyTimer)}s)`;
+          }
+        }
+      }
+    }
+
+    // 4. Nearby Dropped Weapon Prompt if not planting/defusing C4
     if (!showPrompt && !this.player.dead) {
       let nearestItem = null;
       let nearestDist = 2.4;
@@ -2946,6 +3328,9 @@ class TacticalGame {
 
     // 8. Directional Damage Indicators & Active Squad Order Timer
     this.updateDamageIndicators(dt);
+    if (this.currentMode === 'zombies') {
+      this.updateZombieWorldItems(dt);
+    }
     if (this.activeSquadOrder) {
       this.activeSquadOrder.timer -= dt;
       if (this.activeSquadOrder.timer <= 0) {
@@ -2960,16 +3345,18 @@ class TacticalGame {
 
     const t = performance.now() * 0.001;
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
-    const bobAmp = this.player.onGround ? Math.min(1, speed / 6.0) * 0.014 : 0.003;
-    const bobX = Math.cos(t * 9.5) * bobAmp;
-    const bobY = Math.abs(Math.sin(t * 9.5)) * bobAmp * 1.3;
+    const isSprinting = !!this.player.sprinting && speed > 2.5;
+    const bobFreq = isSprinting ? 13.0 : 9.5;
+    const bobAmp = this.player.onGround ? Math.min(1.35, speed / 6.0) * 0.014 : 0.003;
+    const bobX = Math.cos(t * bobFreq) * bobAmp;
+    const bobY = Math.abs(Math.sin(t * bobFreq)) * bobAmp * 1.3;
 
     // Base position + recoil kick
     let posX = 0.24 + bobX;
-    let posY = -0.23 - bobY;
+    let posY = -0.23 - bobY - (isSprinting && !this.player.reloading && !this.mouseDownLeft ? 0.022 : 0);
     let posZ = -0.44 + this.player.recoilKick;
-    let rotX = this.player.recoilKick * 1.4;
-    let rotY = 0;
+    let rotX = this.player.recoilKick * 1.4 - (isSprinting && !this.player.reloading && !this.mouseDownLeft ? 0.09 : 0);
+    let rotY = isSprinting && !this.player.reloading && !this.mouseDownLeft ? 0.24 : 0;
     let rotZ = 0;
 
     const ud = model.userData || {};
@@ -3055,33 +3442,61 @@ class TacticalGame {
   }
 
   updateHUD() {
+    const isZombieMode = this.currentMode === 'zombies';
+    const zs = this.zombieState;
+
     // Top Score & Timer Bar
     const ctScoreEl = document.getElementById('hud-score-ct');
     const tScoreEl = document.getElementById('hud-score-t');
-    if (ctScoreEl) ctScoreEl.textContent = this.scores.CT;
-    if (tScoreEl) tScoreEl.textContent = this.scores.T;
+    if (ctScoreEl) ctScoreEl.textContent = isZombieMode && zs ? `W${zs.wave}` : this.scores.CT;
+    if (tScoreEl) {
+      const bestW = Math.max(zs?.wave || 1, CS.ui?.profile?.stats?.bestZombieWave || 0);
+      tScoreEl.textContent = isZombieMode ? `🏆${bestW}` : this.scores.T;
+    }
 
     const timerEl = document.getElementById('hud-timer');
     if (timerEl) {
-      const secs = Math.max(0, Math.ceil(this.phaseTimer));
-      const m = Math.floor(secs / 60);
-      const s = String(secs % 60).padStart(2, '0');
-      if (this.plantedBomb && this.plantedBomb.active) {
-        timerEl.textContent = `${m}:${s} • 💣 ${Math.max(0, this.plantedBomb.timer).toFixed(1)}s`;
-        timerEl.classList.add('bomb-alert');
+      if (isZombieMode && zs) {
+        const aliveZ = this.bots.filter(b => !b.dead).length + (zs.zombiesToSpawn || 0);
+        if (zs.intermissionTimer > 0) {
+          timerEl.textContent = `⏳ NÄCHSTE WELLE ${Math.ceil(zs.intermissionTimer)}s`;
+          timerEl.classList.remove('bomb-alert');
+        } else {
+          timerEl.textContent = `🧟 ${aliveZ} ZOMBIES`;
+          timerEl.classList.toggle('bomb-alert', aliveZ <= 3 && aliveZ > 0);
+        }
       } else {
-        timerEl.textContent = `${m}:${s}`;
-        timerEl.classList.remove('bomb-alert');
+        const secs = Math.max(0, Math.ceil(this.phaseTimer));
+        const m = Math.floor(secs / 60);
+        const s = String(secs % 60).padStart(2, '0');
+        if (this.plantedBomb && this.plantedBomb.active) {
+          timerEl.textContent = `${m}:${s} • 💣 ${Math.max(0, this.plantedBomb.timer).toFixed(1)}s`;
+          timerEl.classList.add('bomb-alert');
+        } else {
+          timerEl.textContent = `${m}:${s}`;
+          timerEl.classList.remove('bomb-alert');
+        }
       }
     }
 
-    // Alive Counts & Active AI Difficulty Badge
+    // Alive Counts & Active AI Difficulty / Zombie Info Badge
     const ctAlive = (this.player.team === 'CT' && !this.player.dead ? 1 : 0) + this.bots.filter(b => b.team === 'CT' && !b.dead).length;
     const tAlive = (this.player.team === 'T' && !this.player.dead ? 1 : 0) + this.bots.filter(b => b.team === 'T' && !b.dead).length;
     const diffData = this.getDifficultyData();
     const aliveEl = document.getElementById('hud-alive-counts');
     if (aliveEl) {
-      aliveEl.innerHTML = `${ctAlive} Alive vs ${tAlive} Alive &bull; <span style="color:${diffData.color}">${diffData.icon} KI: ${diffData.name.toUpperCase()} (${diffData.creditMult}x CR)</span>`;
+      if (isZombieMode && zs) {
+        const activeBox = zs.boxes[zs.activeBoxIdx];
+        const boxTxt = activeBox ? `📦 Kiste: ${activeBox.label}` : '📦 Kiste bereit';
+        const buffs = [];
+        if (zs.instaKillTimer > 0) buffs.push(`<span style="color:#f87171">💀 INSTA-KILL ${Math.ceil(zs.instaKillTimer)}s</span>`);
+        if (zs.doublePointsTimer > 0) buffs.push(`<span style="color:#38bdf8">💰 2x $ ${Math.ceil(zs.doublePointsTimer)}s</span>`);
+        aliveEl.innerHTML = buffs.length > 0 ? `${boxTxt} &bull; ${buffs.join(' &bull; ')}` : `${boxTxt} &bull; [B] Munition/Rüstung &bull; Kills: ${this.player.kills}`;
+      } else if (this.currentMode === 'bomb') {
+        aliveEl.innerHTML = `Bo3 • R${this.roundNumber}/3 &bull; ${ctAlive} CT vs ${tAlive} T &bull; <span style="color:${diffData.color}">${diffData.icon} ${diffData.name.toUpperCase()} (${diffData.creditMult}x CR)</span>`;
+      } else {
+        aliveEl.innerHTML = `${ctAlive} Alive vs ${tAlive} Alive &bull; <span style="color:${diffData.color}">${diffData.icon} KI: ${diffData.name.toUpperCase()} (${diffData.creditMult}x CR)</span>`;
+      }
     }
 
     // Active Tactical Squad Order Badge below Radar
@@ -3141,7 +3556,13 @@ class TacticalGame {
       const skinId = (slotObj && slotObj.skinId) ? slotObj.skinId : (CS.ui.profile.weaponSkins[wData.id] || 'default');
       const skinLabel = skinId !== 'default' ? ` | ${CS.SKINS[skinId]?.name}` : '';
       const displayName = wData.id === 'knife' ? CS.KNIFE_MODELS[CS.ui.profile.equippedKnife]?.name : wData.name;
-      wNameEl.textContent = `${displayName}${skinLabel}`;
+      const tiers = CS.getWeaponUpgradeTiers ? CS.getWeaponUpgradeTiers(wData.id) : [];
+      const activeAtts = CS.ui?.getEquippedAttachments ? CS.ui.getEquippedAttachments(wData.id) : [];
+      const modIcons = tiers.filter(t => activeAtts.includes(t.id)).map(t => t.icon).join('');
+      const modTag = modIcons ? ` [${modIcons}]` : '';
+      const ocLabel = slotObj?.overclocked ? ' ★ OVERCLOCKED' : '';
+      wNameEl.textContent = `${displayName}${skinLabel}${modTag}${ocLabel}`;
+      wNameEl.style.color = slotObj?.overclocked ? '#00f0ff' : '';
     }
 
     // Inventory Slots Bar (Bottom Right)
@@ -3157,6 +3578,608 @@ class TacticalGame {
       else if (s === 5) label = this.player.slots[5] ? '💣 C4 Bombe' : '-';
       slotEl.querySelector('.slot-name').textContent = label;
     }
+  }
+
+  // ==========================================================================
+  // CO-OP / SOLO ZOMBIE SURVIVAL & MYSTERY BOX SYSTEM
+  // ==========================================================================
+  createEmptyZombieState() {
+    return {
+      wave: 1,
+      zombiesToSpawn: 0,
+      zombiesKilledInWave: 0,
+      totalWaveZombies: 0,
+      spawnTimer: 0,
+      intermissionTimer: 0,
+      boxes: [],
+      activeBoxIdx: 0,
+      boxState: 'idle',
+      boxRollTimer: 0,
+      boxTickAccum: 0,
+      boxReadyTimer: 0,
+      boxRolledWeapon: null,
+      powerups: [],
+      instaKillTimer: 0,
+      doublePointsTimer: 0,
+      boxesOpenedInMatch: 0
+    };
+  }
+
+  cleanupZombieBoxes() {
+    if (!this.zombieState) return;
+    if (this.zombieState.boxes?.length) {
+      this.zombieState.boxes.forEach(bx => {
+        if (bx.group) this.scene.remove(bx.group);
+        if (bx.beamMesh) this.scene.remove(bx.beamMesh);
+        if (bx.light) this.scene.remove(bx.light);
+      });
+      this.zombieState.boxes = [];
+    }
+    if (this.zombieState.powerups?.length) {
+      this.zombieState.powerups.forEach(pu => {
+        if (pu.mesh) this.scene.remove(pu.mesh);
+        if (pu.light) this.scene.remove(pu.light);
+      });
+      this.zombieState.powerups = [];
+    }
+  }
+
+  initZombieMode() {
+    this.cleanupZombieBoxes();
+    this.zombieState = this.createEmptyZombieState();
+    this.initZombieMysteryBoxes();
+  }
+
+  initZombieMysteryBoxes() {
+    const spots = CS.mapBuilder.mysteryBoxes || [];
+    if (!spots.length) return;
+
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.82, metalness: 0.1 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.35, metalness: 0.65, emissive: 0x78350f, emissiveIntensity: 0.35 });
+    const lockMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0ea5e9, emissiveIntensity: 0.9, roughness: 0.25 });
+
+    this.zombieState.boxes = spots.map((sp, idx) => {
+      const group = new THREE.Group();
+      group.position.set(sp.x, sp.y || 0, sp.z);
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.72, 0.85), crateMat);
+      base.position.y = 0.36;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      group.add(base);
+
+      const bandL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.76, 0.9), trimMat);
+      bandL.position.set(-0.55, 0.38, 0);
+      group.add(bandL);
+      const bandR = bandL.clone();
+      bandR.position.x = 0.55;
+      group.add(bandR);
+
+      // Front glowing Mystery Lock plaque
+      const frontGlow = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.08), lockMat);
+      frontGlow.position.set(0, 0.55, 0.44);
+      group.add(frontGlow);
+
+      // Hinged Lid
+      const lidPivot = new THREE.Group();
+      lidPivot.position.set(0, 0.72, -0.42);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 0.9), crateMat);
+      lid.position.set(0, 0.09, 0.42);
+      lid.castShadow = true;
+      lidPivot.add(lid);
+      const lidTopTrim = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.42), lockMat);
+      lidTopTrim.position.set(0, 0.19, 0.42);
+      lidPivot.add(lidTopTrim);
+      group.add(lidPivot);
+
+      // Floating Weapon Hologram Pivot inside crate
+      const holoPivot = new THREE.Group();
+      holoPivot.position.set(0, 1.05, 0);
+      group.add(holoPivot);
+
+      // Tall Sky Beacon so players locate the active Mystery Box from anywhere on the map
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const beamMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.55, 42, 12, 1, true), beamMat);
+      beamMesh.position.set(sp.x, (sp.y || 0) + 21, sp.z);
+      this.scene.add(beamMesh);
+
+      const light = new THREE.PointLight(0x38bdf8, 1.6, 11);
+      light.position.set(sp.x, (sp.y || 0) + 1.8, sp.z);
+      this.scene.add(light);
+
+      this.scene.add(group);
+      return {
+        x: sp.x,
+        y: sp.y || 0,
+        z: sp.z,
+        label: sp.label || `Kiste ${idx + 1}`,
+        position: new THREE.Vector3(sp.x, sp.y || 0, sp.z),
+        group,
+        lidPivot,
+        holoPivot,
+        beamMesh,
+        beamMat,
+        light,
+        active: idx === 0,
+        usesLeft: 5
+      };
+    });
+
+    this.setActiveMysteryBox(0);
+  }
+
+  setActiveMysteryBox(activeIdx) {
+    const zs = this.zombieState;
+    if (!zs || !zs.boxes.length) return;
+    zs.activeBoxIdx = activeIdx % zs.boxes.length;
+    zs.boxes.forEach((bx, idx) => {
+      const isAct = idx === zs.activeBoxIdx;
+      bx.active = isAct;
+      bx.group.visible = isAct;
+      if (bx.beamMesh) bx.beamMesh.visible = isAct;
+      if (bx.light) bx.light.intensity = isAct ? 1.8 : 0;
+      if (isAct) {
+        bx.usesLeft = 4 + Math.floor(Math.random() * 3); // 4-6 uses before relocating
+        bx.lidPivot.rotation.x = 0;
+        bx.holoPivot.clear();
+      }
+    });
+  }
+
+  pickMysteryBoxRoll(wave = 1) {
+    const tiers = CS.ZOMBIE_CONFIG.boxTiers;
+    const r = Math.random();
+    const eliteChance = Math.min(0.45, 0.14 + (wave - 1) * 0.045);
+    const strongChance = Math.min(0.45, 0.36 + (wave - 1) * 0.02);
+
+    let pool = tiers.common;
+    if (r < eliteChance) pool = tiers.elite;
+    else if (r < eliteChance + strongChance) pool = tiers.strong;
+
+    const currentWep = this.player.slots[1]?.id || this.player.slots[2]?.id;
+    const filtered = pool.filter(id => id !== currentWep);
+    const pickPool = filtered.length ? filtered : pool;
+    const wId = pickPool[Math.floor(Math.random() * pickPool.length)];
+    const wData = CS.WEAPONS[wId] || CS.WEAPONS.ak47;
+
+    // Overclocked (Pack-a-Punch style) chance grows with wave!
+    const ocChance = Math.min(0.55, 0.10 + (wave - 1) * 0.06);
+    const overclocked = Math.random() < ocChance;
+    const ocSkins = CS.ZOMBIE_CONFIG.overclockSkins || ['asiimov', 'neon_rider', 'hyper_beast'];
+    const skinId = overclocked
+      ? ocSkins[Math.floor(Math.random() * ocSkins.length)]
+      : (CS.ui.profile.weaponSkins[wId] || 'default');
+
+    return {
+      id: wId,
+      slot: wData.slot,
+      skinId,
+      overclocked
+    };
+  }
+
+  setMysteryBoxHologram(box, roll) {
+    if (!box || !box.holoPivot) return;
+    box.holoPivot.clear();
+    const model = CS.weaponBuilder.buildWeaponModel(
+      roll.id,
+      roll.skinId || 'default',
+      'knife_default',
+      'gloves_default',
+      'sas_navy',
+      false
+    );
+    model.scale.set(1.35, 1.35, 1.35);
+    box.holoPivot.add(model);
+    if (box.light) {
+      box.light.color.setHex(roll.overclocked ? 0x00f0ff : 0xfbbf24);
+      box.light.intensity = roll.overclocked ? 3.2 : 2.2;
+    }
+  }
+
+  tryInteractMysteryBox() {
+    if (this.currentMode !== 'zombies' || this.player.dead || !this.zombieState) return;
+    const zs = this.zombieState;
+    const activeBox = zs.boxes[zs.activeBoxIdx];
+    if (!activeBox) return;
+    if (this.player.position.distanceTo(activeBox.position) >= 3.4) return;
+
+    if (zs.boxState === 'idle') {
+      const cost = CS.ZOMBIE_CONFIG.boxCost || 750;
+      if (this.player.money < cost) {
+        CS.audio.playUISound('error');
+        CS.ui.showToast(`❌ Nicht genug Geld! Benötigt $${cost}`, 'warn');
+        return;
+      }
+      this.player.money -= cost;
+      zs.boxState = 'rolling';
+      zs.boxRollTimer = 2.4;
+      zs.boxTickAccum = 0;
+      zs.boxesOpenedInMatch++;
+      CS.ui.recordZombieStats({ wave: zs.wave, boxesAdd: 1 });
+      const previewRoll = this.pickMysteryBoxRoll(zs.wave);
+      zs.boxRolledWeapon = previewRoll;
+      this.setMysteryBoxHologram(activeBox, previewRoll);
+      CS.audio.playMysteryBoxTick(0);
+    } else if (zs.boxState === 'ready' && zs.boxRolledWeapon) {
+      this.equipMysteryBoxWeapon(zs.boxRolledWeapon);
+      zs.boxState = 'idle';
+      zs.boxRolledWeapon = null;
+      activeBox.holoPivot.clear();
+      activeBox.lidPivot.rotation.x = 0;
+      if (activeBox.light) {
+        activeBox.light.color.setHex(0x38bdf8);
+        activeBox.light.intensity = 1.8;
+      }
+      activeBox.usesLeft--;
+      if (activeBox.usesLeft <= 0 && zs.boxes.length > 1) {
+        const nextIdx = (zs.activeBoxIdx + 1 + Math.floor(Math.random() * (zs.boxes.length - 1))) % zs.boxes.length;
+        this.setActiveMysteryBox(nextIdx);
+        CS.ui.showToast(`📦 Kiste gewandert nach: ${zs.boxes[nextIdx].label}!`, 'info');
+      }
+    }
+  }
+
+  equipMysteryBoxWeapon(roll) {
+    const wData = CS.WEAPONS[roll.id];
+    if (!wData) return;
+    this.player.slots[wData.slot] = this.createWeaponSlotItem(wData, {
+      overclocked: !!roll.overclocked,
+      skinId: roll.skinId || 'default'
+    });
+    this.switchSlot(wData.slot);
+    CS.audio.playUISound(roll.overclocked ? 'unbox_win' : 'buy');
+    const ocTag = roll.overclocked ? ' ★ OVERCLOCKED (1.65x DMG)' : '';
+    CS.ui.showToast(`🔫 Erhalten: ${wData.name}${ocTag}!`, roll.overclocked ? 'success' : 'info');
+  }
+
+  startZombieWave(waveNum) {
+    const zs = this.zombieState;
+    if (!zs) return;
+    zs.wave = waveNum;
+    zs.intermissionTimer = 0;
+    zs.zombiesKilledInWave = 0;
+    const totalCount = 6 + waveNum * 4;
+    zs.totalWaveZombies = totalCount;
+    zs.zombiesToSpawn = totalCount;
+    zs.spawnTimer = 0.6;
+
+    CS.ui.recordZombieStats({ wave: waveNum });
+    CS.audio.playWaveStart(waveNum);
+    CS.ui.showToast(`🧟 WELLE ${waveNum} GESTARTET — ${totalCount} Zombies im Anmarsch!`, 'warn');
+  }
+
+  spawnSingleZombie() {
+    const zs = this.zombieState;
+    if (!zs || zs.zombiesToSpawn <= 0) return;
+
+    const spPool = [
+      ...(CS.mapBuilder.spawns.T || []),
+      ...(CS.mapBuilder.spawns.DM || [])
+    ];
+    if (!spPool.length) return;
+
+    // Pick a spawn at safe distance from player if available
+    const farSpawns = spPool.filter(sp => {
+      const dx = sp.x - this.player.position.x;
+      const dz = sp.z - this.player.position.z;
+      return dx * dx + dz * dz > 144; // > 12m
+    });
+    const pickPool = farSpawns.length ? farSpawns : spPool;
+    const sp = pickPool[Math.floor(Math.random() * pickPool.length)];
+
+    // Determine Zombie Variant based on Wave
+    const w = zs.wave;
+    const r = Math.random();
+    let variant = 'walker';
+    const bruteChance = w >= 3 ? Math.min(0.22, 0.08 + (w - 3) * 0.03) : 0;
+    const runnerChance = w >= 2 ? Math.min(0.45, 0.20 + (w - 2) * 0.05) : 0;
+    if (r < bruteChance) variant = 'brute';
+    else if (r < bruteChance + runnerChance) variant = 'runner';
+
+    const zombie = new CS.ZombieEntity(`z_${w}_${zs.totalWaveZombies - zs.zombiesToSpawn}`, variant, w, this.scene);
+    zombie.spawnAt(sp);
+    this.bots.push(zombie);
+    zs.zombiesToSpawn--;
+  }
+
+  spawnZombiePowerup(pos) {
+    const zs = this.zombieState;
+    if (!zs || zs.powerups.length >= 4) return;
+    const types = Object.keys(CS.ZOMBIE_CONFIG.powerups);
+    const type = types[Math.floor(Math.random() * types.length)];
+    const cfg = CS.ZOMBIE_CONFIG.powerups[type];
+
+    const mesh = new THREE.Group();
+    mesh.position.set(pos.x, (pos.y || 0) + 0.85, pos.z);
+
+    const core = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.32, 0),
+      new THREE.MeshStandardMaterial({
+        color: cfg.color,
+        emissive: cfg.color,
+        emissiveIntensity: 0.85,
+        roughness: 0.25,
+        metalness: 0.5
+      })
+    );
+    mesh.add(core);
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.45, 0.035, 8, 24),
+      new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.7 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    mesh.add(ring);
+
+    const light = new THREE.PointLight(cfg.color, 1.3, 6.5);
+    light.position.copy(mesh.position);
+    this.scene.add(mesh);
+    this.scene.add(light);
+
+    zs.powerups.push({
+      id: `pu_${Date.now()}_${Math.random()}`,
+      type,
+      position: mesh.position,
+      mesh,
+      light,
+      lifeTimer: 22
+    });
+  }
+
+  collectZombiePowerup(pu) {
+    const zs = this.zombieState;
+    if (!zs) return;
+    const cfg = CS.ZOMBIE_CONFIG.powerups[pu.type];
+    CS.audio.playPowerupPickup();
+
+    if (pu.type === 'max_ammo') {
+      [1, 2].forEach(slotNum => {
+        const s = this.player.slots[slotNum];
+        if (s && CS.WEAPONS[s.id]) {
+          const wData = CS.WEAPONS[s.id];
+          const mods = this.getSlotModSummary(s, wData);
+          s.maxMag = mods.magSize;
+          s.maxReserve = mods.reserveAmmo;
+          s.mag = mods.magSize;
+          s.reserve = s.id === 'glock' && !s.overclocked ? Math.max(60, mods.reserveAmmo) : mods.reserveAmmo;
+        }
+      });
+      this.player.reloading = false;
+    } else if (pu.type === 'insta_kill') {
+      zs.instaKillTimer = 18;
+    } else if (pu.type === 'double_points') {
+      zs.doublePointsTimer = 22;
+    } else if (pu.type === 'medkit') {
+      this.player.health = Math.min(100, this.player.health + 65);
+      this.player.armor = Math.min(100, this.player.armor + 35);
+    } else if (pu.type === 'nuke') {
+      let killedNuke = 0;
+      const survivors = [...this.bots];
+      survivors.forEach(z => {
+        if (!z.dead && z.isZombie) {
+          z.takeDamage(99999, this.player, false);
+          this.onEntityKilled(this.player, z, 'nuke', false);
+          killedNuke++;
+        }
+      });
+      this.player.money += 400;
+      CS.audio.playExplosion('he', this.player.position, this.player.position, new THREE.Vector3(0, 0, -1));
+      CS.ui.showToast(`☢️ NUKE! ${killedNuke} Zombies eliminiert (+$400)!`, 'success');
+      return;
+    }
+
+    CS.ui.showToast(`${cfg ? cfg.label : pu.type} aktiviert!`, 'success');
+  }
+
+  updateZombieMode(dt) {
+    const zs = this.zombieState;
+    if (!zs || this.roundPhase !== 'live') return;
+
+    // Powerup timers
+    if (zs.instaKillTimer > 0) zs.instaKillTimer = Math.max(0, zs.instaKillTimer - dt);
+    if (zs.doublePointsTimer > 0) zs.doublePointsTimer = Math.max(0, zs.doublePointsTimer - dt);
+
+    // Mystery Box Rolling & Ready State
+    const activeBox = zs.boxes[zs.activeBoxIdx];
+    if (activeBox) {
+      if (activeBox.beamMesh) {
+        activeBox.beamMat.opacity = 0.16 + 0.08 * Math.sin(performance.now() * 0.004);
+      }
+      if (zs.boxState === 'rolling') {
+        zs.boxRollTimer -= dt;
+        zs.boxTickAccum += dt;
+        activeBox.lidPivot.rotation.x = Math.max(-1.35, activeBox.lidPivot.rotation.x - dt * 4.5);
+        activeBox.holoPivot.position.y = 1.05 + (1 - Math.max(0, zs.boxRollTimer) / 2.4) * 0.45;
+        activeBox.holoPivot.rotation.y += dt * 7.5;
+
+        if (zs.boxTickAccum >= 0.22) {
+          zs.boxTickAccum = 0;
+          const stepIdx = Math.floor((2.4 - Math.max(0, zs.boxRollTimer)) / 0.22);
+          CS.audio.playMysteryBoxTick(stepIdx);
+          const tempRoll = this.pickMysteryBoxRoll(zs.wave);
+          zs.boxRolledWeapon = tempRoll;
+          this.setMysteryBoxHologram(activeBox, tempRoll);
+        }
+
+        if (zs.boxRollTimer <= 0) {
+          zs.boxState = 'ready';
+          zs.boxReadyTimer = 11.0;
+          const finalRoll = this.pickMysteryBoxRoll(zs.wave);
+          zs.boxRolledWeapon = finalRoll;
+          this.setMysteryBoxHologram(activeBox, finalRoll);
+          CS.audio.playUISound('unbox_win');
+        }
+      } else if (zs.boxState === 'ready') {
+        activeBox.holoPivot.rotation.y += dt * 2.1;
+        zs.boxReadyTimer -= dt;
+        if (zs.boxReadyTimer <= 0) {
+          zs.boxState = 'idle';
+          zs.boxRolledWeapon = null;
+          activeBox.holoPivot.clear();
+          activeBox.lidPivot.rotation.x = 0;
+          if (activeBox.light) {
+            activeBox.light.color.setHex(0x38bdf8);
+            activeBox.light.intensity = 1.8;
+          }
+        }
+      }
+    }
+
+    // Wave Spawner & Intermission
+    if (zs.intermissionTimer > 0) {
+      zs.intermissionTimer -= dt;
+      if (zs.intermissionTimer <= 0) {
+        this.startZombieWave(zs.wave + 1);
+      }
+      return;
+    }
+
+    const aliveCount = this.bots.filter(b => !b.dead).length;
+    const maxConcurrent = Math.min(18, 6 + zs.wave * 2);
+    if (zs.zombiesToSpawn > 0 && aliveCount < maxConcurrent) {
+      zs.spawnTimer -= dt;
+      if (zs.spawnTimer <= 0) {
+        this.spawnSingleZombie();
+        zs.spawnTimer = Math.max(0.45, 1.85 - zs.wave * 0.11);
+      }
+    }
+
+    // Wave Cleared?
+    if (zs.zombiesToSpawn <= 0 && aliveCount === 0) {
+      const waveBonus = 250 + zs.wave * 100;
+      this.player.money = Math.min(16000, this.player.money + waveBonus);
+      this.player.health = Math.min(100, this.player.health + 25);
+      zs.intermissionTimer = 8.0;
+      CS.ui.showToast(`✅ WELLE ${zs.wave} GESCHAFFT! +$${waveBonus} & +25 HP — Nächste Welle in 8s`, 'success');
+    }
+  }
+
+  updateZombieWorldItems(dt) {
+    const zs = this.zombieState;
+    if (!zs || !zs.powerups.length) return;
+
+    const now = performance.now() * 0.003;
+    for (let i = zs.powerups.length - 1; i >= 0; i--) {
+      const pu = zs.powerups[i];
+      pu.lifeTimer -= dt;
+      if (pu.mesh) {
+        pu.mesh.rotation.y += dt * 2.6;
+        pu.mesh.position.y = pu.position.y;
+        pu.mesh.children.forEach((ch, ci) => {
+          if (ci === 0) ch.position.y = Math.sin(now + i) * 0.14;
+        });
+        if (pu.lifeTimer < 4) {
+          pu.mesh.visible = Math.floor(pu.lifeTimer * 8) % 2 === 0;
+        }
+      }
+
+      if (!this.player.dead && this.player.position.distanceTo(pu.position) < 2.0) {
+        this.collectZombiePowerup(pu);
+        if (pu.mesh) this.scene.remove(pu.mesh);
+        if (pu.light) this.scene.remove(pu.light);
+        zs.powerups.splice(i, 1);
+        continue;
+      }
+
+      if (pu.lifeTimer <= 0) {
+        if (pu.mesh) this.scene.remove(pu.mesh);
+        if (pu.light) this.scene.remove(pu.light);
+        zs.powerups.splice(i, 1);
+      }
+    }
+  }
+
+  endZombieRun() {
+    if (this.roundPhase === 'ended') return;
+    this.roundPhase = 'ended';
+    this.buyMenuOpen = false;
+    this._nextClickStartsNewMatch = true;
+
+    document.getElementById('buy-menu-overlay')?.classList.add('hidden');
+    document.getElementById('death-screen-overlay')?.classList.add('hidden');
+    document.getElementById('interaction-prompt')?.classList.add('hidden');
+    document.getElementById('action-progress-wrap')?.classList.add('hidden');
+
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock(); } catch (e) {}
+    }
+
+    const zs = this.zombieState || { wave: 1, boxesOpenedInMatch: 0 };
+    const wave = zs.wave || 1;
+    const kills = this.player.kills || 0;
+    const headshots = this.player.roundHeadshots || 0;
+
+    CS.ui.recordZombieStats({ wave });
+    CS.ui.recordRoundEnd(wave >= 5, this.currentMap);
+
+    const prevRank = CS.ui.getRankInfo();
+    const xpMult = this.getXPMultiplier();
+    const waveCR = wave * 4 + Math.floor(kills / 5);
+    const creditReward = Math.max(4, Math.round(waveCR * this.getCreditMultiplier()));
+    const rawXP = wave * 55 + kills * 12 + headshots * 8;
+    const xpReward = Math.max(30, Math.round(rawXP * xpMult));
+
+    CS.ui.addCredits(creditReward, `Zombie Welle ${wave}`);
+    const xpRes = CS.ui.addXP(xpReward);
+    const newRank = CS.ui.getRankInfo();
+    const bestWave = Math.max(wave, CS.ui.profile.stats.bestZombieWave || 1);
+
+    const titleEl = document.getElementById('round-end-title');
+    const reasonEl = document.getElementById('round-end-reason');
+    const scoreEl = document.getElementById('round-end-score');
+    const kdEl = document.getElementById('round-end-kd');
+    const crEl = document.getElementById('round-end-credits');
+    const promptEl = document.getElementById('round-end-prompt');
+    const nextBtn = document.getElementById('btn-play-next-round');
+
+    if (titleEl) {
+      titleEl.textContent = `🧟 ÜBERRANNT — WELLE ${wave} ERREICHT!`;
+      titleEl.style.color = wave >= 5 ? '#4ade80' : '#f87171';
+    }
+    if (reasonEl) {
+      reasonEl.textContent = `Zombie Survival • ${kills} Kills (${headshots} Headshots) • ${zs.boxesOpenedInMatch || 0} Waffenkisten • Rekord: Welle ${bestWave}`;
+    }
+    if (scoreEl) scoreEl.textContent = `Welle ${wave} (Best: ${bestWave})`;
+    if (kdEl) kdEl.textContent = `${kills} Kills / ${headshots} HS`;
+    if (crEl) crEl.textContent = `+${creditReward} CR`;
+    if (promptEl) promptEl.textContent = 'Starte eine neue Zombie-Survival-Runde oder verbessere deine Skins im Hauptmenü!';
+    if (nextBtn) nextBtn.textContent = '🔄 NEUES ZOMBIE-MATCH STARTEN';
+
+    const xpRankLabel = document.getElementById('round-end-rank-label');
+    const xpTotalEl = document.getElementById('round-end-xp-total');
+    const xpBreakEl = document.getElementById('round-end-xp-breakdown');
+    const xpFillEl = document.getElementById('round-end-xp-fill');
+    const xpSubEl = document.getElementById('round-end-xp-sub');
+    const lvlBannerEl = document.getElementById('round-end-levelup-banner');
+
+    if (xpRankLabel) xpRankLabel.textContent = `${newRank.current.icon} Level ${newRank.level} • ${newRank.current.name}`;
+    if (xpTotalEl) xpTotalEl.textContent = `+${xpReward} XP (${xpMult}x)`;
+    if (xpBreakEl) xpBreakEl.textContent = `Welle ${wave}: +${wave * 55} • Kills (${kills}): +${kills * 12} • Headshots (${headshots}): +${headshots * 8}`;
+    if (xpFillEl) {
+      xpFillEl.style.width = `${Math.round(xpRes.prevProgress * 100)}%`;
+      setTimeout(() => { xpFillEl.style.width = `${Math.round(newRank.progress * 100)}%`; }, 120);
+    }
+    if (xpSubEl) {
+      xpSubEl.textContent = newRank.isMax
+        ? `MAX LEVEL ERREICHT (${newRank.totalXP} XP gesamt)`
+        : `${newRank.xpIntoLevel} / ${newRank.xpNeededForNext} XP bis Level ${newRank.level + 1}`;
+    }
+    if (lvlBannerEl) {
+      const leveledUp = xpRes.levelsGained > 0 || newRank.level > prevRank.level;
+      lvlBannerEl.classList.toggle('hidden', !leveledUp);
+      if (leveledUp) {
+        lvlBannerEl.textContent = `🎉 LEVEL AUFSTIEG (LVL ${newRank.level})! Neue Belohnung im 🎖️ LEVEL-PFAD!`;
+      }
+    }
+
+    document.getElementById('round-end-overlay')?.classList.remove('hidden');
   }
 }
 

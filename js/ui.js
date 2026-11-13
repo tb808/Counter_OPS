@@ -50,6 +50,9 @@ class UIManager {
       bestKillStreak: 0,
       casesOpened: 0,
       totalCreditsEarned: 0,
+      bestZombieWave: 0,
+      zombieKills: 0,
+      zombieBoxesOpened: 0,
       weaponKills: {},
       weaponHeadshots: {},
       weaponShots: {},
@@ -81,6 +84,7 @@ class UIManager {
         famas: 'default', m4a1s: 'default', m4a4: 'default', ak47: 'default',
         aug: 'default', ssg08: 'default', awp: 'default', knife: 'default'
       },
+      equippedAttachments: {},
       settings: {
         sensitivity: 2.2,
         volume: 0.75,
@@ -125,6 +129,7 @@ class UIManager {
         claimedLevels: Array.isArray(parsed.claimedLevels) ? parsed.claimedLevels : [],
         freeCases: { ...(parsed.freeCases || {}) },
         weaponSkins: { ...defaultProfile.weaponSkins, ...(parsed.weaponSkins || {}) },
+        equippedAttachments: { ...(parsed.equippedAttachments || {}) },
         settings: { ...defaultProfile.settings, ...(parsed.settings || {}) },
         stats: mergedStats
       };
@@ -195,13 +200,75 @@ class UIManager {
         st.weaponHeadshots[weaponId] = (st.weaponHeadshots[weaponId] || 0) + 1;
       }
     }
+    let newlyUnlockedTiers = [];
     if (weaponId) {
-      st.weaponKills[weaponId] = (st.weaponKills[weaponId] || 0) + 1;
+      const prevKills = st.weaponKills[weaponId] || 0;
+      const nextKills = prevKills + 1;
+      st.weaponKills[weaponId] = nextKills;
+
+      const tiers = CS.getWeaponUpgradeTiers ? CS.getWeaponUpgradeTiers(weaponId) : [];
+      if (tiers.length > 0) {
+        if (!this.profile.equippedAttachments) this.profile.equippedAttachments = {};
+        if (!Array.isArray(this.profile.equippedAttachments[weaponId])) {
+          this.profile.equippedAttachments[weaponId] = tiers
+            .filter(t => prevKills >= t.kills)
+            .map(t => t.id);
+        }
+        tiers.forEach(t => {
+          if (prevKills < t.kills && nextKills >= t.kills) {
+            if (!this.profile.equippedAttachments[weaponId].includes(t.id)) {
+              this.profile.equippedAttachments[weaponId].push(t.id);
+            }
+            newlyUnlockedTiers.push(t);
+          }
+        });
+      }
     }
     if (roundStreak > (st.bestKillStreak || 0)) {
       st.bestKillStreak = roundStreak;
     }
     this.saveProfile();
+
+    if (newlyUnlockedTiers.length > 0) {
+      const wName = CS.WEAPONS[weaponId]?.name || weaponId.toUpperCase();
+      newlyUnlockedTiers.forEach(t => {
+        CS.audio?.playUISound('unbox_win');
+        this.showToast(`🔓 ${wName} UPGRADE FREIGESCHALTET: ${t.icon} ${t.name} (${t.short})!`, 'gold');
+        if (CS.game && CS.game.running && CS.game.onWeaponUpgradeUnlocked) {
+          CS.game.onWeaponUpgradeUnlocked(weaponId, t);
+        }
+      });
+    }
+  }
+
+  getUnlockedWeaponUpgrades(weaponId) {
+    const st = this.ensureStats();
+    const kills = st.weaponKills?.[weaponId] || 0;
+    const tiers = CS.getWeaponUpgradeTiers ? CS.getWeaponUpgradeTiers(weaponId) : [];
+    return tiers.filter(t => kills >= t.kills).map(t => t.id);
+  }
+
+  getEquippedAttachments(weaponId) {
+    const unlocked = this.getUnlockedWeaponUpgrades(weaponId);
+    if (!unlocked.length) return [];
+    const saved = this.profile.equippedAttachments?.[weaponId];
+    if (!Array.isArray(saved)) return unlocked;
+    return saved.filter(id => unlocked.includes(id));
+  }
+
+  toggleWeaponAttachment(weaponId, attachmentId) {
+    const unlocked = this.getUnlockedWeaponUpgrades(weaponId);
+    if (!unlocked.includes(attachmentId)) return false;
+    if (!this.profile.equippedAttachments) this.profile.equippedAttachments = {};
+    if (!Array.isArray(this.profile.equippedAttachments[weaponId])) {
+      this.profile.equippedAttachments[weaponId] = [...unlocked];
+    }
+    const list = this.profile.equippedAttachments[weaponId];
+    const idx = list.indexOf(attachmentId);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(attachmentId);
+    this.saveProfile();
+    return true;
   }
 
   recordDeath() {
@@ -224,6 +291,14 @@ class UIManager {
     if (mapId) {
       st.mapRounds[mapId] = (st.mapRounds[mapId] || 0) + 1;
     }
+    this.saveProfile();
+  }
+
+  recordZombieStats({ wave = 0, killsAdd = 0, boxesAdd = 0 } = {}) {
+    const st = this.ensureStats();
+    if (wave > (st.bestZombieWave || 0)) st.bestZombieWave = wave;
+    if (killsAdd > 0) st.zombieKills = (st.zombieKills || 0) + killsAdd;
+    if (boxesAdd > 0) st.zombieBoxesOpened = (st.zombieBoxesOpened || 0) + boxesAdd;
     this.saveProfile();
   }
 
@@ -375,7 +450,8 @@ class UIManager {
 
     if (this.lobbyPreviewMode === 'weapon') {
       // Close-up 3D Weapon / Knife Inspection on Pedestal
-      const wModel = CS.weaponBuilder.buildWeaponModel(wId, skinId, knifeId, gloveId, outfitId, false);
+      const atts = this.getEquippedAttachments(wId);
+      const wModel = CS.weaponBuilder.buildWeaponModel(wId, skinId, knifeId, gloveId, outfitId, false, atts);
       wModel.scale.set(2.9, 2.9, 2.9);
       wModel.position.set(0, 1.15, 0.15);
       wModel.rotation.y = Math.PI / 2;
@@ -671,6 +747,12 @@ class UIManager {
           CS.audio.playUISound('click');
           modeContainer.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
+          const teamPicker = document.querySelector('.team-picker');
+          if (teamPicker) {
+            const isZ = card.dataset.mode === 'zombies';
+            teamPicker.style.opacity = isZ ? '0.45' : '';
+            teamPicker.title = isZ ? 'Im Zombie-Survival-Modus kämpfst du allein gegen Zombie-Wellen' : '';
+          }
         });
         card.addEventListener('dblclick', () => {
           this.startSelectedMatch(card.dataset.mode);
@@ -869,6 +951,62 @@ class UIManager {
           this.rebuildLobbyShowcase();
         });
       });
+    }
+
+    const upgWrap = document.getElementById('customizer-upgrades-wrap');
+    if (upgWrap) {
+      const wId = this.customizerWeapon || 'ak47';
+      const wName = wId === 'knife' ? (CS.KNIFE_MODELS[this.profile.equippedKnife]?.name || 'Messer') : (CS.WEAPONS[wId]?.name || wId);
+      const wKills = this.ensureStats().weaponKills?.[wId] || 0;
+      const tiers = CS.getWeaponUpgradeTiers ? CS.getWeaponUpgradeTiers(wId) : [];
+      const activeAtts = this.getEquippedAttachments(wId);
+
+      if (!tiers.length) {
+        upgWrap.innerHTML = '';
+      } else {
+        upgWrap.innerHTML = `
+          <div class="upgrades-header">
+            <span>🔧 KILL-UPGRADES FÜR ${wName.toUpperCase()}</span>
+            <span style="color:#fbbf24;">💀 ${wKills} Kills</span>
+          </div>
+          <div class="upgrades-grid">
+            ${tiers.map(t => {
+              const unlocked = wKills >= t.kills;
+              const equipped = unlocked && activeAtts.includes(t.id);
+              const remaining = Math.max(0, t.kills - wKills);
+              const statusTxt = equipped
+                ? '✓ AKTIV (Klick zum Deaktivieren)'
+                : (unlocked ? 'AUSRÜSTEN (Freigeschaltet)' : `🔒 Ab ${t.kills} Kills (noch ${remaining})`);
+              return `
+                <div class="upgrade-card ${equipped ? 'equipped' : ''} ${!unlocked ? 'locked' : ''}" data-att="${t.id}" title="${t.desc}">
+                  <div class="upgrade-card-top">
+                    <span>${t.icon} ${t.name}</span>
+                    <span style="color:#94a3b8;font-size:10px;">${Math.min(wKills, t.kills)}/${t.kills}</span>
+                  </div>
+                  <div class="upgrade-card-effect">${t.short}</div>
+                  <div class="upgrade-card-status">${statusTxt}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+
+        upgWrap.querySelectorAll('.upgrade-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const attId = card.dataset.att;
+            const tier = tiers.find(x => x.id === attId);
+            if (!this.toggleWeaponAttachment(wId, attId)) {
+              CS.audio.playUISound('error');
+              this.showToast(`🔒 Benötigt ${tier?.kills || 5} Kills mit ${wName} (aktuell ${wKills})!`, 'warn');
+              return;
+            }
+            CS.audio.playUISound('buy');
+            this.lobbyPreviewMode = 'weapon';
+            this.renderCustomizer();
+            this.rebuildLobbyShowcase();
+          });
+        });
+      }
     }
 
     const skinGrid = document.getElementById('customizer-skins');
@@ -1854,6 +1992,18 @@ class UIManager {
           ? `Explosiv- / Brandschaden`
           : `🎯 ${row.wHs} Kopfschüsse (${row.wHsPct}%) &bull; ${row.wShots} Schüsse (${row.wAcc}% Präzision)`;
 
+        const tiers = (!row.wObj.isGrenade && CS.getWeaponUpgradeTiers) ? CS.getWeaponUpgradeTiers(row.wId) : [];
+        const activeAtts = tiers.length ? this.getEquippedAttachments(row.wId) : [];
+        const nextTier = tiers.find(t => row.wKills < t.kills);
+        const modPillsHtml = tiers.length ? `
+          <div class="stats-wep-mods">
+            ${tiers.filter(t => row.wKills >= t.kills).map(t => `<span class="stats-mod-pill" title="${t.desc}">${t.icon} ${t.short}${activeAtts.includes(t.id) ? '' : ' (Aus)'}</span>`).join('')}
+            ${nextTier
+              ? `<span class="stats-mod-next">Nächstes: ${nextTier.icon} ${nextTier.name} (${row.wKills}/${nextTier.kills})</span>`
+              : `<span class="stats-mod-pill" style="color:#4ade80;border-color:rgba(74,222,128,0.45);background:rgba(74,222,128,0.12);">★ MEISTERSCHAFT MAX</span>`}
+          </div>
+        ` : '';
+
         return `
           <div class="stats-weapon-row ${isTop ? 'top-weapon' : ''}">
             <img class="stats-wep-thumb" src="${thumbUrl}" alt="${displayName}" />
@@ -1863,6 +2013,7 @@ class UIManager {
                 ${isTop ? '<span style="background:#fbbf24;color:#0f172a;font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:900;">★ NR. 1</span>' : ''}
               </div>
               <div class="stats-wep-sub">${subDetails}</div>
+              ${modPillsHtml}
             </div>
             <div class="stats-wep-bar-wrap">
               <div class="stats-wep-bar-track">
@@ -1922,6 +2073,8 @@ class UIManager {
 
       const careerItems = [
         ...mapItems,
+        { label: '🧟 Beste Zombie-Welle (Rekord)', val: `Welle ${(st.bestZombieWave || 0).toLocaleString('de-DE')}` },
+        { label: '🧟 Eliminierte Zombies (Gesamt)', val: `${(st.zombieKills || 0).toLocaleString('de-DE')} Zombies` },
         { label: '🪙 Verdiente Credits (Gesamt)', val: `${(st.totalCreditsEarned || 0).toLocaleString('de-DE')} CR` },
         { label: '📦 Geöffnete Waffenkisten', val: `${(st.casesOpened || 0).toLocaleString('de-DE')} Kisten` },
         { label: '🎨 Sammlung freigeschaltet', val: `${totalCosmeticsOwned} / ${totalCosmeticsMax} Items` },
@@ -2042,6 +2195,61 @@ class UIManager {
     const moneyEl = document.getElementById('buy-menu-money');
     if (moneyEl) moneyEl.textContent = `$${game.player.money.toLocaleString('de-DE')}`;
 
+    if (game.currentMode === 'zombies') {
+      const zombieCats = [
+        {
+          title: '1. MUNITION & ÜBERLEBEN',
+          items: [
+            { special: 'ammo_refill', name: '🔫 Munition komplett auffüllen (alle Waffen)', price: '$350' },
+            { special: 'medkit', name: '❤️ Erste-Hilfe Medkit (+60 HP)', price: '$400' },
+            { special: 'kevlar', name: '🛡️ Kevlar-Weste (100 AP)', price: '$650' },
+            { special: 'helmet', name: '🪖 Kevlar + Ballistik-Helm (100 AP)', price: '$1000' }
+          ]
+        },
+        {
+          title: '2. TAKTISCHE GRANATEN',
+          items: ['he', 'molotov', 'flash']
+        }
+      ];
+
+      container.innerHTML = `
+        <div style="grid-column:1 / -1;background:rgba(234,179,8,0.12);border:1px solid rgba(250,204,21,0.45);border-radius:8px;padding:10px 14px;color:#fde047;font-size:12.5px;font-weight:700;">
+          📦 Waffen-Hinweis: Bessere &amp; ★ Overclocked Waffen gibt es im Zombie-Modus ausschließlich über die leuchtende Waffenkiste [E] ($750) auf der Map!
+        </div>
+        ${zombieCats.map(cat => `
+          <div class="buy-column">
+            <div class="buy-col-header">${cat.title}</div>
+            ${cat.items.map(it => {
+              if (typeof it === 'object') {
+                return `<button class="buy-item-btn" data-special="${it.special}">
+                  <span class="b-name">${it.name}</span>
+                  <span class="b-price">${it.price}</span>
+                </button>`;
+              }
+              const w = CS.WEAPONS[it];
+              if (!w) return '';
+              return `<button class="buy-item-btn" data-weapon="${w.id}">
+                <div>
+                  <div class="b-name">${w.name}</div>
+                  <div class="b-sub">${w.desc}</div>
+                </div>
+                <span class="b-price">$${w.price}</span>
+              </button>`;
+            }).join('')}
+          </div>
+        `).join('')}
+      `;
+
+      container.querySelectorAll('.buy-item-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.dataset.special) game.buySpecialGear(btn.dataset.special);
+          else if (btn.dataset.weapon) game.buyWeapon(btn.dataset.weapon);
+          this.renderBuyMenu(game);
+        });
+      });
+      return;
+    }
+
     const categories = [
       { key: 'pistols', title: '1. PISTOLEN', items: ['glock', 'usps', 'p250', 'deagle'] },
       { key: 'smgs', title: '2. SMGS & SCHROT', items: ['mp9', 'ump45', 'nova', 'xm1014'] },
@@ -2143,6 +2351,32 @@ class UIManager {
     const tbodyCT = document.getElementById('sb-body-ct');
     const tbodyT = document.getElementById('sb-body-t');
     if (!tbodyCT || !tbodyT) return;
+
+    if (game.currentMode === 'zombies') {
+      const zs = game.zombieState || {};
+      const aliveZ = (game.bots || []).filter(b => !b.dead).length + (zs.zombiesToSpawn || 0);
+      tbodyCT.innerHTML = `
+        <tr>
+          <td>${this.profile.playerName} (Überlebender)</td>
+          <td>${game.player.kills}</td>
+          <td>Welle ${zs.wave || 1}</td>
+          <td>${aliveZ} übrig</td>
+          <td>$${game.player.money}</td>
+          <td>Rekord: W${this.profile.stats?.bestZombieWave || 0}</td>
+        </tr>
+      `;
+      tbodyT.innerHTML = `
+        <tr>
+          <td>🧟 Untote Horde (Welle ${zs.wave || 1})</td>
+          <td>-</td>
+          <td>-</td>
+          <td>${zs.zombiesKilledInWave || 0} / ${zs.totalWaveZombies || 0} eliminiert</td>
+          <td>-</td>
+          <td>Kiste: $${CS.ZOMBIE_CONFIG?.boxCost || 750}</td>
+        </tr>
+      `;
+      return;
+    }
 
     const allParticipants = [
       {

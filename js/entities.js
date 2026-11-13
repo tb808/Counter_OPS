@@ -1693,3 +1693,463 @@ class TacticalBot {
 }
 
 CS.TacticalBot = TacticalBot;
+
+// ============================================================================
+// ZOMBIE SURVIVAL: 3D ZOMBIE MODELS & WAVE AI ENTITY
+// ============================================================================
+CS.buildZombieModel = function(variant = 'walker') {
+  const root = new THREE.Group();
+  const isBrute = variant === 'brute';
+  const isRunner = variant === 'runner';
+
+  const skinColor = isBrute ? 0x3b2d4a : (isRunner ? 0x5c3632 : 0x5c7352);
+  const clothColor = isBrute ? 0x1e1b2e : (isRunner ? 0x2b1717 : 0x242c24);
+  const eyeColor = isBrute ? 0xc026d3 : (isRunner ? 0xff3300 : 0xa3e635);
+  const woundColor = isBrute ? 0x9333ea : 0x991b1b;
+
+  const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.78, metalness: 0.08 });
+  const clothMat = new THREE.MeshStandardMaterial({ color: clothColor, roughness: 0.85, metalness: 0.1 });
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.42, metalness: 0.65 });
+  const woundMat = new THREE.MeshStandardMaterial({
+    color: woundColor,
+    emissive: isBrute ? 0x7e22ce : 0x450a0a,
+    emissiveIntensity: isBrute ? 0.55 : 0.2,
+    roughness: 0.55
+  });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: eyeColor });
+
+  const hitboxes = [];
+  const tagHitbox = (mesh, part) => {
+    mesh.userData.hitboxPart = part;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    hitboxes.push(mesh);
+  };
+
+  // 1. Legs (pivot at hip y = 0.86)
+  const buildZombieLeg = (isLeft) => {
+    const legPivot = new THREE.Group();
+    legPivot.position.set(isLeft ? -0.15 : 0.15, 0.86, 0);
+    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.43, 0.20), clothMat);
+    thigh.position.y = -0.22;
+    tagHitbox(thigh, 'legs');
+    legPivot.add(thigh);
+
+    const shin = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.42, 0.18), skinMat);
+    shin.position.y = -0.63;
+    tagHitbox(shin, 'legs');
+    legPivot.add(shin);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.26), clothMat);
+    foot.position.set(0, -0.81, -0.04);
+    legPivot.add(foot);
+    return legPivot;
+  };
+  const leftLegPivot = buildZombieLeg(true);
+  const rightLegPivot = buildZombieLeg(false);
+  root.add(leftLegPivot);
+  root.add(rightLegPivot);
+
+  // 2. Upper Body (slouched forward)
+  const upperBody = new THREE.Group();
+  upperBody.position.set(0, 0.86, 0);
+  root.add(upperBody);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.27), clothMat);
+  torso.position.y = 0.34;
+  tagHitbox(torso, 'chest');
+  upperBody.add(torso);
+
+  // Exposed rib/blood wound patch on chest
+  const chestPatch = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.22, 0.29),
+    isBrute ? woundMat : woundMat
+  );
+  chestPatch.position.set(isBrute ? 0 : 0.05, 0.38, -0.01);
+  tagHitbox(chestPatch, 'chest');
+  upperBody.add(chestPatch);
+
+  if (isBrute) {
+    const brutePlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.44, 0.34), armorMat);
+    brutePlate.position.set(0, 0.40, 0);
+    tagHitbox(brutePlate, 'chest');
+    upperBody.add(brutePlate);
+  }
+
+  // 3. Head + Glowing Undead Eyes
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 0.78, -0.03);
+  upperBody.add(headGroup);
+
+  const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.30, 0.28), skinMat);
+  tagHitbox(headMesh, 'head');
+  headGroup.add(headMesh);
+
+  if (isBrute) {
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.32), armorMat);
+    helm.position.y = 0.10;
+    tagHitbox(helm, 'head');
+    headGroup.add(helm);
+  }
+
+  [-0.065, 0.065].forEach(ex => {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.035, 0.03), eyeMat);
+    eye.position.set(ex, 0.03, -0.145);
+    tagHitbox(eye, 'head');
+    headGroup.add(eye);
+  });
+
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.04), woundMat);
+  jaw.position.set(0, -0.08, -0.14);
+  headGroup.add(jaw);
+
+  // 4. Outstretched Zombie Arms (Reaching forward to claw!)
+  const buildZombieArm = (isLeft) => {
+    const piv = new THREE.Group();
+    piv.position.set(isLeft ? -0.32 : 0.32, 0.56, 0);
+    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.30, 0.15), isBrute ? armorMat : clothMat);
+    sleeve.position.set(0, -0.12, 0);
+    piv.add(sleeve);
+
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.32, 0.13), skinMat);
+    forearm.position.set(0, -0.40, 0);
+    piv.add(forearm);
+
+    const claw = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.14), woundMat);
+    claw.position.set(0, -0.58, -0.02);
+    piv.add(claw);
+
+    piv.rotation.x = Math.PI / 2 - 0.15; // Arms stretched forward toward player
+    return piv;
+  };
+  const leftArmPivot = buildZombieArm(true);
+  const rightArmPivot = buildZombieArm(false);
+  upperBody.add(leftArmPivot);
+  upperBody.add(rightArmPivot);
+
+  if (isBrute) {
+    root.scale.set(1.28, 1.26, 1.28);
+  } else if (isRunner) {
+    root.scale.set(0.94, 0.96, 0.94);
+    upperBody.rotation.x = -0.18;
+  }
+
+  root.userData = {
+    leftLegPivot,
+    rightLegPivot,
+    upperBody,
+    headGroup,
+    leftArmPivot,
+    rightArmPivot,
+    hitboxes
+  };
+
+  return root;
+};
+
+class ZombieEntity {
+  constructor(id, variant, wave, scene) {
+    this.id = id;
+    this.variant = variant || 'walker';
+    this.wave = wave || 1;
+    this.scene = scene;
+    this.team = 'ZOMBIE';
+    this.isZombie = true;
+    this.weaponId = 'knife';
+    this.skinId = 'default';
+
+    const waveFactor = Math.max(0, this.wave - 1);
+    if (this.variant === 'brute') {
+      this.name = `Brute-Zombie (W${this.wave})`;
+      this.maxHealth = Math.round(280 + waveFactor * 75);
+      this.speed = Math.min(4.4, 2.5 + waveFactor * 0.16);
+      this.attackDamage = Math.min(48, 26 + waveFactor * 2);
+      this.attackCooldownMax = 1.25;
+      this.armor = 35;
+    } else if (this.variant === 'runner') {
+      this.name = `Sprinter-Zombie`;
+      this.maxHealth = Math.round(75 + waveFactor * 24);
+      this.speed = Math.min(6.6, 4.1 + waveFactor * 0.24);
+      this.attackDamage = Math.min(32, 14 + waveFactor * 1.5);
+      this.attackCooldownMax = 0.78;
+      this.armor = 0;
+    } else {
+      this.name = `Zombie`;
+      this.maxHealth = Math.round(95 + waveFactor * 30);
+      this.speed = Math.min(4.9, 2.6 + waveFactor * 0.20);
+      this.attackDamage = Math.min(36, 16 + waveFactor * 1.6);
+      this.attackCooldownMax = 1.05;
+      this.armor = 0;
+    }
+
+    this.health = this.maxHealth;
+    this.dead = false;
+    this.flashedTimer = 0;
+    this.attackCooldown = 0.4;
+    this.swipeAnim = 0;
+    this.groanTimer = 2 + Math.random() * 6;
+    this.repathTimer = 0;
+    this.targetNode = null;
+    this.walkPhase = Math.random() * 10;
+
+    this.position = new THREE.Vector3();
+    this.yaw = 0;
+    this.deathTimer = 0;
+    this.deathFallDir = 1;
+    this.deathYawSpin = 0;
+    this.deathVelocity = new THREE.Vector3();
+    this.meshRemoved = false;
+
+    this.mesh = null;
+    this.buildMesh();
+  }
+
+  buildMesh() {
+    if (this.mesh) this.scene.remove(this.mesh);
+    this.mesh = CS.buildZombieModel(this.variant);
+    for (const hb of this.mesh.userData.hitboxes) {
+      hb.userData.bot = this;
+    }
+    this.mesh.position.copy(this.position);
+    this.scene.add(this.mesh);
+  }
+
+  spawnAt(spawnPt) {
+    this.dead = false;
+    this.deathTimer = 0;
+    this.position.set(
+      spawnPt.x + (Math.random() - 0.5) * 1.4,
+      spawnPt.y || 0,
+      spawnPt.z + (Math.random() - 0.5) * 1.4
+    );
+    this.yaw = spawnPt.rotY || 0;
+    if (this.mesh) {
+      this.mesh.visible = true;
+      this.mesh.position.copy(this.position);
+      this.mesh.rotation.set(0, this.yaw, 0);
+    }
+  }
+
+  takeDamage(amount, attacker, isHeadshot = false) {
+    if (this.dead) return false;
+    const instaKill = CS.game?.zombieState?.instaKillTimer > 0;
+    let dmg = instaKill ? 99999 : amount;
+    if (!instaKill && this.armor > 0) {
+      dmg *= 0.8;
+    }
+    this.health = Math.max(0, this.health - dmg);
+
+    if (this.health <= 0) {
+      this.dead = true;
+      this.deathTimer = 0;
+      this.deathFallDir = Math.random() > 0.5 ? 1 : -1;
+      this.deathYawSpin = (Math.random() - 0.5) * 1.6;
+      if (attacker && attacker.position) {
+        const push = this.position.clone().sub(attacker.position);
+        push.y = 0;
+        if (push.lengthSq() > 0.001) push.normalize();
+        this.deathVelocity.copy(push.multiplyScalar(isHeadshot ? 4.2 : 2.6));
+      }
+      return true;
+    }
+    return false;
+  }
+
+  findNearestNavNode(x, z, nodes) {
+    let best = null;
+    let bestD = Infinity;
+    for (const n of nodes) {
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best;
+  }
+
+  findNextHopBFS(startNode, goalNode, byId) {
+    if (!startNode || !goalNode) return null;
+    if (startNode.id === goalNode.id) return goalNode;
+    const visited = new Set([startNode.id]);
+    const queue = [];
+    for (const nbId of (startNode.links || [])) {
+      const nb = byId[nbId];
+      if (nb) {
+        visited.add(nbId);
+        queue.push({ node: nb, firstHop: nb });
+      }
+    }
+    while (queue.length > 0) {
+      const { node, firstHop } = queue.shift();
+      if (node.id === goalNode.id) return firstHop;
+      for (const nbId of (node.links || [])) {
+        if (!visited.has(nbId) && byId[nbId]) {
+          visited.add(nbId);
+          queue.push({ node: byId[nbId], firstHop });
+        }
+      }
+    }
+    return goalNode;
+  }
+
+  moveWithCollision(dx, dz) {
+    const r = this.variant === 'brute' ? 0.52 : 0.42;
+    let moved = false;
+    const nx = this.position.x + dx;
+    if (!this.checkAABB(nx, this.position.y, this.position.z, r)) {
+      this.position.x = nx;
+      moved = true;
+    }
+    const nz = this.position.z + dz;
+    if (!this.checkAABB(this.position.x, this.position.y, nz, r)) {
+      this.position.z = nz;
+      moved = true;
+    }
+    let groundY = 0;
+    for (const c of CS.mapBuilder.colliders) {
+      if (this.position.x + r > c.minX && this.position.x - r < c.maxX &&
+          this.position.z + r > c.minZ && this.position.z - r < c.maxZ) {
+        if (c.maxY <= this.position.y + 0.65 && c.maxY > groundY) {
+          groundY = c.maxY;
+        }
+      }
+    }
+    this.position.y = groundY;
+    return moved;
+  }
+
+  checkAABB(x, y, z, r) {
+    const mb = CS.mapBuilder.mapBounds || { minX: -82, maxX: 82, minZ: -84, maxZ: 84 };
+    if (x < mb.minX + 1.0 || x > mb.maxX - 1.0 || z < mb.minZ + 1.0 || z > mb.maxZ - 1.0) return true;
+    for (const c of CS.mapBuilder.colliders) {
+      if (c.maxY <= y + 0.62) continue;
+      if (y + 1.75 < c.minY) continue;
+      if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  update(dt, game) {
+    if (this.dead) {
+      if (this.meshRemoved) return;
+      this.deathTimer += dt;
+      if (this.mesh) {
+        const fallDur = 0.42;
+        const p = Math.min(1, this.deathTimer / fallDur);
+        const ease = 1 - Math.pow(1 - p, 3);
+        if (p < 1) {
+          this.position.x += this.deathVelocity.x * dt * (1 - p);
+          this.position.z += this.deathVelocity.z * dt * (1 - p);
+        }
+        this.mesh.position.set(this.position.x, this.position.y + ease * 0.16, this.position.z);
+        this.mesh.rotation.x = ease * (Math.PI / 2) * this.deathFallDir;
+        this.mesh.rotation.z = ease * 0.3 * this.deathFallDir;
+        this.mesh.rotation.y = this.yaw + ease * this.deathYawSpin;
+        if (this.deathTimer > 2.4) {
+          this.scene.remove(this.mesh);
+          this.meshRemoved = true;
+        }
+      }
+      return;
+    }
+
+    if (!game.player || game.player.dead) return;
+
+    if (this.attackCooldown > 0) this.attackCooldown -= dt;
+    if (this.flashedTimer > 0) this.flashedTimer -= dt;
+    if (this.swipeAnim > 0) this.swipeAnim -= dt * 4;
+
+    // Spatial zombie groan audio
+    this.groanTimer -= dt;
+    if (this.groanTimer <= 0) {
+      this.groanTimer = 4.5 + Math.random() * 6.5;
+      if (this.position.distanceTo(game.player.position) < 32) {
+        const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), game.player.yaw);
+        CS.audio.playZombieGrowl(this.variant === 'brute', this.position, game.player.position, fwd);
+      }
+    }
+
+    const pPos = game.player.position;
+    const distToPlayer = Math.hypot(pPos.x - this.position.x, pPos.z - this.position.z);
+
+    // Check if we have direct sightline to player, otherwise steer via BFS navNodes
+    let steerX = pPos.x;
+    let steerZ = pPos.z;
+    const myEye = new THREE.Vector3(this.position.x, this.position.y + 1.4, this.position.z);
+    const pEye = new THREE.Vector3(pPos.x, pPos.y + 1.4, pPos.z);
+    const directLOS = distToPlayer < 26 && game.hasLineOfSight(myEye, pEye);
+
+    if (!directLOS && distToPlayer > 2.5) {
+      this.repathTimer -= dt;
+      if (!this.targetNode || this.repathTimer <= 0 || Math.hypot(this.targetNode.x - this.position.x, this.targetNode.z - this.position.z) < 2.2) {
+        const nodes = CS.mapBuilder.navNodes || [];
+        if (nodes.length > 0) {
+          const byId = {};
+          for (const n of nodes) byId[n.id] = n;
+          const startNode = this.findNearestNavNode(this.position.x, this.position.z, nodes);
+          const goalNode = this.findNearestNavNode(pPos.x, pPos.z, nodes);
+          this.targetNode = this.findNextHopBFS(startNode, goalNode, byId) || goalNode;
+        }
+        this.repathTimer = 0.75;
+      }
+      if (this.targetNode) {
+        steerX = this.targetNode.x;
+        steerZ = this.targetNode.z;
+      }
+    }
+
+    const dx = steerX - this.position.x;
+    const dz = steerZ - this.position.z;
+    const sDist = Math.hypot(dx, dz) || 1;
+    const desiredYaw = Math.atan2(-dx, -dz);
+    let diff = desiredYaw - this.yaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.yaw += diff * Math.min(1, dt * 8.5);
+
+    const activeSpeed = this.flashedTimer > 0 ? this.speed * 0.25 : this.speed;
+    if (distToPlayer > 1.35) {
+      const moved = this.moveWithCollision((dx / sDist) * activeSpeed * dt, (dz / sDist) * activeSpeed * dt);
+      if (!moved) {
+        // Nudge sideways slightly to slide past narrow obstacles
+        const perpX = -(dz / sDist) * activeSpeed * 0.65 * dt;
+        const perpZ = (dx / sDist) * activeSpeed * 0.65 * dt;
+        this.moveWithCollision(perpX, perpZ);
+      }
+    }
+
+    // Melee claw attack on player
+    if (distToPlayer <= 1.95 && Math.abs(pPos.y - this.position.y) < 1.8 && this.attackCooldown <= 0 && this.flashedTimer <= 0) {
+      this.attackCooldown = this.attackCooldownMax;
+      this.swipeAnim = 1.0;
+      CS.audio.playZombieHit();
+      game.damagePlayer(this.attackDamage, this, false);
+    }
+
+    // Animate zombie shambling/running & arm reaching
+    if (this.mesh) {
+      this.mesh.position.copy(this.position);
+      this.mesh.rotation.set(0, this.yaw, 0);
+      this.walkPhase += dt * activeSpeed * 2.3;
+      const swing = Math.sin(this.walkPhase) * 0.55;
+      const ud = this.mesh.userData;
+      if (ud.leftLegPivot && ud.rightLegPivot) {
+        ud.leftLegPivot.rotation.x = swing;
+        ud.rightLegPivot.rotation.x = -swing;
+      }
+      if (ud.leftArmPivot && ud.rightArmPivot) {
+        const swipe = Math.sin(this.swipeAnim * Math.PI) * 0.85;
+        ud.leftArmPivot.rotation.x = (Math.PI / 2 - 0.15) + Math.sin(this.walkPhase * 0.7) * 0.18 - swipe;
+        ud.rightArmPivot.rotation.x = (Math.PI / 2 - 0.15) - Math.sin(this.walkPhase * 0.7) * 0.18 - swipe;
+      }
+      if (ud.upperBody) {
+        ud.upperBody.rotation.z = Math.sin(this.walkPhase * 0.5) * 0.08;
+      }
+    }
+  }
+}
+
+CS.ZombieEntity = ZombieEntity;

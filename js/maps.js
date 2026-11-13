@@ -10,6 +10,7 @@ class MapBuilder {
     this.waypoints = [];
     this.navNodes = [];
     this.bombsites = {};
+    this.mysteryBoxes = [];
     this.spawns = { CT: [], T: [], DM: [] };
     this.mapBounds = { minX: -82, maxX: 82, minZ: -84, maxZ: 84 };
     this.currentMapId = 'de_sandstorm';
@@ -29,6 +30,7 @@ class MapBuilder {
     this.raycastMeshes = [];
     this.waypoints = [];
     this.navNodes = [];
+    this.mysteryBoxes = [];
     this.animatedWindMeshes = [];
     this.spinningMeshes = [];
     this.cloudGroups = [];
@@ -1313,6 +1315,12 @@ class MapBuilder {
         { x: -2,  y: 0,   z: -5,  rotY: 0 }
       ];
 
+      this.mysteryBoxes = [
+        { x: 0,   y: 0,   z: -26, label: 'Mid Courtyard' },
+        { x: 48,  y: 1.2, z: -38, label: 'Bombsite A' },
+        { x: -48, y: 0.6, z: -32, label: 'Bombsite B' }
+      ];
+
       // Connected Tactical Nav-Graph for Smart Bot Pathfinding
       this.navNodes = [
         { id: 'ct_spawn',   x: 0,   z: -62, lane: 'mid', links: ['ct_b_gate', 'ct_a_gate'] },
@@ -1607,6 +1615,12 @@ class MapBuilder {
         { x: 56,  y: 0,    z: 12,  rotY: 0 }
       ];
 
+      this.mysteryBoxes = [
+        { x: -6,  y: 0.75, z: 2,   label: 'Mid Brücke' },
+        { x: 48,  y: 0.6,  z: -16, label: 'Villa A' },
+        { x: -44, y: 0.0,  z: -40, label: 'Fountain B' }
+      ];
+
       this.navNodes = [
         { id: 'ct_spawn',   x: 0,   z: -62, lane: 'mid', links: ['ct_b_arch', 'ct_a_arch'] },
         { id: 'ct_b_arch',  x: -24, z: -52, lane: 'B',   links: ['ct_spawn', 'ct_mid', 'b_church'] },
@@ -1883,6 +1897,12 @@ class MapBuilder {
         { x: -60, y: 0,   z: -8,  rotY: Math.PI / 2 }
       ];
 
+      this.mysteryBoxes = [
+        { x: 6,   y: 0.0, z: 22,  label: 'Reaktor Hof' },
+        { x: 6,   y: 0.6, z: -20, label: 'Reaktor A' },
+        { x: -50, y: 0.0, z: -8,  label: 'Coolant B' }
+      ];
+
       this.navNodes = [
         { id: 'ct_spawn',   x: 6,   z: -62, lane: 'mid', links: ['ct_b_gate', 'ct_a_gate'] },
         { id: 'ct_b_gate',  x: -24, z: -52, lane: 'B',   links: ['ct_spawn', 'ct_sec', 'heaven_w'] },
@@ -1990,7 +2010,7 @@ class MapBuilder {
   }
 
   // Render Live 2D Tactical Radar on HUD Canvas
-  renderRadar(ctx, width, height, player, bots, plantedBomb, droppedBomb) {
+  renderRadar(ctx, width, height, player, bots, plantedBomb, droppedBomb, zombieCtx = null) {
     ctx.clearRect(0, 0, width, height);
 
     ctx.save();
@@ -1998,10 +2018,10 @@ class MapBuilder {
     ctx.arc(width / 2, height / 2, width / 2 - 3, 0, Math.PI * 2);
     ctx.clip();
 
-    ctx.fillStyle = 'rgba(11, 17, 28, 0.88)';
+    ctx.fillStyle = zombieCtx ? 'rgba(18, 10, 14, 0.90)' : 'rgba(11, 17, 28, 0.88)';
     ctx.fillRect(0, 0, width, height);
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)';
+    ctx.strokeStyle = zombieCtx ? 'rgba(239, 68, 68, 0.12)' : 'rgba(56, 189, 248, 0.1)';
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 28) {
       ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
@@ -2024,24 +2044,44 @@ class MapBuilder {
       ctx.fillRect(p1.rx, p1.ry, Math.max(1.5, w), Math.max(1.5, d));
     }
 
-    ['A', 'B'].forEach(siteKey => {
-      const s = this.bombsites[siteKey];
-      if (!s) return;
-      const p = toRadar(s.x, s.z);
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
-      ctx.beginPath();
-      ctx.arc(p.rx, p.ry, s.radius * scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    if (!zombieCtx) {
+      ['A', 'B'].forEach(siteKey => {
+        const s = this.bombsites[siteKey];
+        if (!s) return;
+        const p = toRadar(s.x, s.z);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+        ctx.beginPath();
+        ctx.arc(p.rx, p.ry, s.radius * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
 
-      ctx.fillStyle = '#fca5a5';
-      ctx.font = '900 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(siteKey, p.rx, p.ry);
-    });
+        ctx.fillStyle = '#fca5a5';
+        ctx.font = '900 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(siteKey, p.rx, p.ry);
+      });
+    } else {
+      // Zombie Mode: Active Mystery Box & Power-ups on Radar!
+      if (zombieCtx.activeBoxPos) {
+        const bx = toRadar(zombieCtx.activeBoxPos.x, zombieCtx.activeBoxPos.z);
+        const pulse = 5.5 + Math.sin(performance.now() * 0.01) * 2.2;
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.35)';
+        ctx.beginPath(); ctx.arc(bx.rx, bx.ry, pulse + 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(bx.rx - 4.5, bx.ry - 4.5, 9, 9);
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(bx.rx - 4.5, bx.ry - 4.5, 9, 9);
+      }
+      for (const pu of (zombieCtx.powerups || [])) {
+        const ppu = toRadar(pu.position.x, pu.position.z);
+        ctx.fillStyle = pu.hex || '#4ade80';
+        ctx.beginPath(); ctx.arc(ppu.rx, ppu.ry, 3.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
 
     if (plantedBomb && plantedBomb.active) {
       const bp = toRadar(plantedBomb.position.x, plantedBomb.position.z);
@@ -2058,6 +2098,14 @@ class MapBuilder {
 
     for (const b of (bots || [])) {
       if (b.dead) continue;
+      if (b.isZombie) {
+        const zb = toRadar(b.position.x, b.position.z);
+        ctx.fillStyle = b.variant === 'brute' ? '#c084fc' : (b.variant === 'runner' ? '#fb923c' : '#ef4444');
+        ctx.beginPath();
+        ctx.arc(zb.rx, zb.ry, b.variant === 'brute' ? 4.8 : 3.4, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
       const isAlly = b.team === player.team;
       const isSpotted = b.radarVisibleTimer > 0;
       if (!isAlly && !isSpotted) continue;

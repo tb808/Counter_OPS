@@ -5,7 +5,7 @@ window.CS = window.CS || {};
 
 class WeaponModelBuilder {
   // Build any weapon 3D Group (used for First-Person Viewmodel, 3rd-Person Bots, and Lobby Showcase)
-  buildWeaponModel(weaponId, skinId = 'default', knifeModelId = 'knife_default', gloveId = 'gloves_default', outfitId = 'sas_navy', includeHands = true) {
+  buildWeaponModel(weaponId, skinId = 'default', knifeModelId = 'knife_default', gloveId = 'gloves_default', outfitId = 'sas_navy', includeHands = true, attachments = []) {
     const group = new THREE.Group();
     const skinMat = CS.textures.getWeaponSkinMaterial(skinId, 'body');
     const darkMat = CS.textures.getWeaponSkinMaterial(skinId, 'dark_metal');
@@ -759,6 +759,99 @@ class WeaponModelBuilder {
 
       leftHandTarget.set(-0.025, -0.024, -0.26);
       rightHandTarget.set(0.012, -0.055, 0.03);
+    }
+
+    // --- UNLOCKED KILL-MILESTONE 3D ATTACHMENTS ---
+    if (Array.isArray(attachments) && attachments.length > 0 && !CS.WEAPONS[weaponId]?.isGrenade && !CS.WEAPONS[weaponId]?.isC4) {
+      const hasAtt = (id) => attachments.includes(id);
+      const tacMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.85 });
+      const goldTrimMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0ea5e9, emissiveIntensity: 0.65, roughness: 0.25, metalness: 0.8 });
+
+      if (weaponId === 'knife') {
+        if (hasAtt('knife_titan') || hasAtt('knife_reach')) {
+          const edgeGlow = new THREE.Mesh(
+            new THREE.BoxGeometry(0.008, 0.13, 0.012),
+            new THREE.MeshBasicMaterial({ color: hasAtt('knife_titan') ? 0x38bdf8 : 0xfbbf24 })
+          );
+          edgeGlow.position.set(0, 0.055, -0.048);
+          edgeGlow.rotation.x = -0.35;
+          group.add(edgeGlow);
+        }
+      } else {
+        // 1. Extended Magazine (visibly longer + tactical basepad)
+        if (hasAtt('extended_mag') && magMesh) {
+          magMesh.scale.y *= 1.38;
+          magMesh.position.y -= 0.028;
+          const pad = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.016, 0.056), goldTrimMat);
+          pad.position.set(magMesh.position.x, magMesh.position.y - 0.075, magMesh.position.z);
+          pad.rotation.x = magMesh.rotation.x;
+          group.add(pad);
+        }
+
+        // 2. Reflex Holo-Sight OR Ballistic Laser Pod
+        if (hasAtt('optic_scope')) {
+          const wInfo = CS.WEAPONS[weaponId];
+          if (wInfo?.scopeLevels && wInfo.scopeLevels.length > 0) {
+            // Side Laser / Ballistic Rangefinder on Scoped Rifles
+            const pod = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.022, 0.068), tacMat);
+            pod.position.set(0.028, 0.046, -0.22);
+            group.add(pod);
+            const emitter = new THREE.Mesh(new THREE.CircleGeometry(0.006, 10), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+            emitter.rotation.y = Math.PI;
+            emitter.position.set(0.028, 0.046, -0.255);
+            group.add(emitter);
+          } else {
+            // Compact Picatinny Holo/Reflex Sight mounted on top rail
+            const mountMap = {
+              glock: [0, 0.060, -0.04, 0.72],
+              usps: [0, 0.062, -0.04, 0.72],
+              p250: [0, 0.060, -0.04, 0.72],
+              deagle: [0, 0.070, -0.04, 0.76],
+              mp9: [0, 0.064, -0.07, 1.0],
+              ump45: [0, 0.070, -0.08, 1.0],
+              nova: [0, 0.064, -0.06, 1.0],
+              xm1014: [0, 0.064, -0.06, 1.0],
+              famas: [0, 0.122, -0.075, 1.0],
+              ak47: [0, 0.062, -0.06, 1.05],
+              m4a1s: [0, 0.092, -0.05, 1.0],
+              m4a4: [0, 0.095, -0.07, 1.0]
+            };
+            const cfg = mountMap[weaponId] || [0, 0.068, -0.06, 1.0];
+            const opticGroup = new THREE.Group();
+            const s = cfg[3];
+            const railBase = new THREE.Mesh(new THREE.BoxGeometry(0.028 * s, 0.010 * s, 0.052 * s), tacMat);
+            opticGroup.add(railBase);
+            const hood = new THREE.Mesh(new THREE.BoxGeometry(0.032 * s, 0.028 * s, 0.044 * s), tacMat);
+            hood.position.set(0, 0.018 * s, 0);
+            opticGroup.add(hood);
+            const lens = new THREE.Mesh(
+              new THREE.PlaneGeometry(0.024 * s, 0.020 * s),
+              new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45, side: THREE.DoubleSide })
+            );
+            lens.position.set(0, 0.018 * s, 0.012 * s);
+            opticGroup.add(lens);
+            const dot = new THREE.Mesh(
+              new THREE.SphereGeometry(0.0028 * s, 8, 8),
+              new THREE.MeshBasicMaterial({ color: 0xef4444 })
+            );
+            dot.position.set(0, 0.018 * s, 0.010 * s);
+            opticGroup.add(dot);
+            opticGroup.position.set(cfg[0], cfg[1], cfg[2]);
+            group.add(opticGroup);
+          }
+        }
+
+        // 3. Match Compensator / Heavy Muzzle Brake
+        if (hasAtt('heavy_barrel')) {
+          const comp = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.028, 0.052), tacMat);
+          comp.position.set(muzzlePoint.x, muzzlePoint.y, muzzlePoint.z - 0.012);
+          group.add(comp);
+          const vent = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.008, 0.036), goldTrimMat);
+          vent.position.set(muzzlePoint.x, muzzlePoint.y + 0.008, muzzlePoint.z - 0.012);
+          group.add(vent);
+          muzzlePoint.z -= 0.036;
+        }
+      }
     }
 
     // --- FIRST-PERSON HANDS, GLOVES & OUTFIT-SPECIFIC FOREARM ARMOR ---

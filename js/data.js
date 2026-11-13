@@ -726,18 +726,32 @@ CS.DIFFICULTIES = {
 CS.MODES = {
   bomb: {
     id: 'bomb',
-    name: 'Bombenentschärfung (Kein Respawn)',
-    shortName: 'BOMB DEFUSAL',
+    name: 'Bombenentschärfung (Best of 3)',
+    shortName: 'BOMB DEFUSAL (Bo3)',
     icon: '💣',
     creditMult: 1.25,
-    maxRounds: 12,
-    startMoney: 500,
+    maxRounds: 3,
+    winRounds: 2,
+    startMoney: 800,
     roundTime: 300,
     buyTime: 300,
     bombTime: 40,
     respawn: false,
     respawnDelay: 0,
-    desc: 'Kein Respawn: Wer stirbt, bleibt bis zum Rundenende tot! Höchster Modus-Credit-Bonus (+25% CR).'
+    desc: 'Best of 3 (max. 15 Min): Wer zuerst 2 Runden gewinnt, holt den Match-Sieg & Bonus-Credits! Kein Respawn (+25% CR).'
+  },
+  zombies: {
+    id: 'zombies',
+    name: 'Zombie Survival (CoD-Wellen)',
+    shortName: 'ZOMBIE SURVIVAL',
+    icon: '🧟',
+    creditMult: 1.35,
+    startMoney: 500,
+    roundTime: 9999,
+    buyTime: 9999,
+    respawn: false,
+    respawnDelay: 0,
+    desc: 'CoD-Zombie-Wellen: Starte mit schwacher Pistole, ziehe bessere & ★ Overclocked Waffen aus leuchtenden Kisten [E] und überlebe immer schnellere & stärkere Zombies! (+35% CR)'
   },
   tdm: {
     id: 'tdm',
@@ -913,3 +927,172 @@ CS.LEVEL_REWARDS = [
     freeCaseId: 'case_legend'
   }
 ];
+
+// --- ZOMBIE SURVIVAL MYSTERY BOX & POWER-UP CONFIG ---
+CS.ZOMBIE_CONFIG = {
+  boxCost: 750,
+  boxTiers: {
+    common: ['p250', 'deagle', 'mp9', 'ump45', 'nova'],
+    strong: ['famas', 'xm1014', 'm4a1s', 'm4a4', 'ak47'],
+    elite:  ['aug', 'ssg08', 'awp']
+  },
+  overclockSkins: ['dragon_lore', 'emerald_doppler', 'hyper_beast', 'gold_arabesque', 'neon_rider'],
+  powerups: {
+    max_ammo:      { id: 'max_ammo',      label: 'MAX AMMO!',      color: 0x22c55e, hex: '#4ade80', icon: '🔋' },
+    insta_kill:    { id: 'insta_kill',    label: 'INSTA-KILL!',    color: 0xef4444, hex: '#f87171', icon: '💀' },
+    nuke:          { id: 'nuke',          label: 'KABOOM! (NUKE)', color: 0xfacc15, hex: '#fde047', icon: '☢️' },
+    double_points: { id: 'double_points', label: '2x PUNKTE!',     color: 0x38bdf8, hex: '#38bdf8', icon: '💰' },
+    medkit:        { id: 'medkit',        label: 'MEDKIT +50 HP/AP', color: 0xa855f7, hex: '#c084fc', icon: '❤️' }
+  }
+};
+
+// --- WEAPON MASTERY & KILL-UNLOCKABLE ATTACHMENT UPGRADES ---
+CS.WEAPON_UPGRADES = {
+  firearm: [
+    {
+      id: 'quick_mag',
+      kills: 5,
+      icon: '💨',
+      name: 'Schnellwechsel-Griff',
+      short: 'Reload -22% / Draw -25%',
+      desc: '22% schnelleres Nachladen & 25% schnellerer Waffenwechsel.'
+    },
+    {
+      id: 'extended_mag',
+      kills: 15,
+      icon: '🔋',
+      name: 'Erweitertes Magazin',
+      short: '+35% Magazin / +40% Reserve',
+      desc: '+35% Magazingröße (mind. +3 Schuss) & +40% Reserve-Munition.'
+    },
+    {
+      id: 'optic_scope',
+      kills: 30,
+      icon: '🎯',
+      name: 'Taktisches Visier / Optik',
+      short: 'Scope-Zoom & Präzision',
+      desc: 'Montiert ein 1.55x Holo-Visier [Rechtsklick] bzw. verstärkt Scopes (+15% Headshot-Mult, -40% Hipfire-Streuung).'
+    },
+    {
+      id: 'heavy_barrel',
+      kills: 50,
+      icon: '🔥',
+      name: 'Match-Lauf & Kompensator',
+      short: '+12% DMG / -30% Recoil',
+      desc: '+12% Schaden, -30% Rückstoß & -25% Streuung durch schweren Präzisionslauf.'
+    }
+  ],
+  knife: [
+    {
+      id: 'knife_light',
+      kills: 5,
+      icon: '💨',
+      name: 'Leichtbau-Klinge',
+      short: '+15% Schlagtempo',
+      desc: '15% schnellere Messerangriffe (Primär & Schwer).'
+    },
+    {
+      id: 'knife_reach',
+      kills: 15,
+      icon: '🗡️',
+      name: 'Verlängerter Griff',
+      short: '+25% Reichweite',
+      desc: '+25% größere Nahkampf-Reichweite.'
+    },
+    {
+      id: 'knife_swift',
+      kills: 30,
+      icon: '⚡',
+      name: 'Ausdauer-Schliff',
+      short: '+12% Lauftempo',
+      desc: '+12% Bewegungsgeschwindigkeit mit gezogenem Messer.'
+    },
+    {
+      id: 'knife_titan',
+      kills: 50,
+      icon: '🩸',
+      name: 'Titan-Schneide',
+      short: '+30% Schaden',
+      desc: '+30% Schaden auf normale & Backstab-Treffer.'
+    }
+  ]
+};
+
+CS.getWeaponUpgradeTiers = function(weaponId) {
+  const wData = CS.WEAPONS[weaponId];
+  if (!wData || wData.isGrenade || wData.isC4) return [];
+  if (weaponId === 'knife') return CS.WEAPON_UPGRADES.knife;
+  return CS.WEAPON_UPGRADES.firearm.map(t => {
+    if (t.id === 'optic_scope' && wData.scopeLevels && wData.scopeLevels.length > 0) {
+      return {
+        ...t,
+        name: 'Ballistik-Optik Mk.II',
+        short: 'Stärkerer Zoom / +15% HS',
+        desc: 'Erhöht Scope-Zoom (+25%), -40% Unscoped-Streuung & +15% Kopf-Multiplikator.'
+      };
+    }
+    return t;
+  });
+};
+
+CS.getWeaponModSummary = function(weaponId, equippedIds = [], overclocked = false) {
+  const wData = CS.WEAPONS[weaponId] || {};
+  const active = Array.isArray(equippedIds) ? equippedIds : [];
+  const has = (id) => active.includes(id);
+
+  // Knife upgrades
+  if (weaponId === 'knife') {
+    return {
+      isKnife: true,
+      active,
+      cooldownMult: has('knife_light') ? 0.85 : 1.0,
+      reachMult: has('knife_reach') ? 1.25 : 1.0,
+      moveSpeedMult: has('knife_swift') ? 1.12 : 1.0,
+      damageMult: has('knife_titan') ? 1.30 : 1.0
+    };
+  }
+
+  const baseMag = wData.magSize || 0;
+  const baseRes = wData.reserveAmmo || 0;
+  let magSize = baseMag;
+  let reserveAmmo = baseRes;
+
+  if (has('extended_mag') && baseMag > 0) {
+    const bonusMag = Math.max(3, Math.round(baseMag * 0.35));
+    magSize = baseMag + bonusMag;
+    reserveAmmo = Math.max(magSize * 2, Math.round(baseRes * 1.4));
+  }
+  if (overclocked && magSize > 0) {
+    magSize = Math.max(1, Math.round(magSize * 1.5));
+    reserveAmmo = Math.max(magSize * 2, Math.round(reserveAmmo * 2.0));
+  }
+
+  const nativeScopes = Array.isArray(wData.scopeLevels) && wData.scopeLevels.length > 0 ? wData.scopeLevels : null;
+  let scopeLevels = nativeScopes;
+  let isHoloOptic = false;
+  if (has('optic_scope')) {
+    if (nativeScopes) {
+      scopeLevels = nativeScopes.map(z => Number((z * 1.25).toFixed(2)));
+    } else {
+      scopeLevels = [1.55];
+      isHoloOptic = true;
+    }
+  }
+
+  return {
+    isKnife: false,
+    active,
+    reloadMult: (has('quick_mag') ? 0.78 : 1.0) * (overclocked ? 0.78 : 1.0),
+    drawMult: has('quick_mag') ? 0.75 : 1.0,
+    magSize,
+    reserveAmmo,
+    scopeLevels,
+    isHoloOptic,
+    hasOptic: has('optic_scope'),
+    damageMult: (has('heavy_barrel') ? 1.12 : 1.0) * (overclocked ? 1.65 : 1.0),
+    recoilMult: has('heavy_barrel') ? 0.70 : 1.0,
+    spreadMult: (has('heavy_barrel') ? 0.75 : 1.0) * (has('optic_scope') ? 0.85 : 1.0),
+    unscopedSpreadMult: has('optic_scope') ? 0.60 : 1.0,
+    headMultBonus: has('optic_scope') ? 1.15 : 1.0
+  };
+};
