@@ -30,6 +30,7 @@
         <button class="nav-tab-btn active" data-tab="play">🎮 SPIELEN</button>
         <button class="nav-tab-btn" data-tab="loadout">🧍 INVENTAR</button>
         <button class="nav-tab-btn" data-tab="levels">🎖️ LEVEL-PFAD <span id="level-unclaimed-badge" class="unclaimed-badge hidden">0</span></button>
+        <button class="nav-tab-btn" data-tab="missions">📋 MISSIONEN <span id="missions-unclaimed-badge" class="unclaimed-badge hidden">0</span></button>
         <button class="nav-tab-btn" data-tab="cases">📦 KISTEN</button>
         <button class="nav-tab-btn" data-tab="shop">🛒 SHOP</button>
         <button class="nav-tab-btn" data-tab="stats">📊 STATISTIKEN</button>
@@ -72,6 +73,8 @@
               ▶ RUNDE STARTEN
             </button>
           </div>
+
+          <div id="play-daily-strip" class="play-daily-strip"></div>
 
           <div class="glass-panel side-panel">
             <div class="panel-title">3. KI-SCHWIERIGKEIT &amp; CREDIT-BONUS</div>
@@ -214,6 +217,15 @@
         <div class="glass-panel level-pass-wrapper">
           <div id="level-pass-header" class="level-pass-header"></div>
           <div id="level-rewards-grid" class="level-rewards-grid"></div>
+        </div>
+      </section>
+
+      <!-- 5C. DAILY MISSIONS & VARIED ROTATING CHALLENGES TAB -->
+      <section id="tab-missions" class="lobby-tab-panel">
+        <div class="glass-panel full-panel missions-wrapper">
+          <div id="missions-header" class="missions-header"></div>
+          <div id="missions-cards-grid" class="missions-grid"></div>
+          <div id="missions-all-clear-wrap"></div>
         </div>
       </section>
 

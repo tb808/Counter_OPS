@@ -2525,3 +2525,230 @@ body, html {
   border-radius: 7px;
   text-align: center;
 }
+
+/* ============================================================================
+   DAILY MISSIONS (PLAY STRIP & DEDICATED MISSIONS TAB)
+   ============================================================================ */
+.play-daily-strip {
+  pointer-events: auto;
+  align-self: flex-start;
+  flex: 1;
+  max-width: 440px;
+  margin: 0 12px;
+  background: rgba(11, 18, 31, 0.82);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  backdrop-filter: blur(12px);
+  border-radius: 10px;
+  padding: 8px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: border-color 0.18s;
+}
+.play-daily-strip:hover {
+  border-color: rgba(56, 189, 248, 0.65);
+}
+.play-daily-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: #38bdf8;
+  letter-spacing: 0.7px;
+}
+.play-daily-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.play-daily-pill {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  padding: 5px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.play-daily-pill.ready {
+  border-color: #22c55e;
+  background: rgba(20, 83, 45, 0.35);
+}
+.play-daily-pill.claimed {
+  opacity: 0.6;
+  border-color: rgba(74, 222, 128, 0.3);
+}
+.play-daily-pill-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.play-daily-pill-prog {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #fbbf24;
+  display: flex;
+  justify-content: space-between;
+}
+.play-daily-bar {
+  height: 4px;
+  background: rgba(30, 41, 59, 0.95);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.play-daily-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #4ade80);
+}
+
+.missions-wrapper {
+  max-width: 1120px;
+  margin: 0 auto;
+  gap: 14px;
+}
+.missions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.26);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.missions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.mission-card {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 11px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  transition: border-color 0.2s, transform 0.18s;
+}
+.mission-card.ready {
+  border-color: #22c55e;
+  box-shadow: 0 0 22px rgba(34, 197, 94, 0.22);
+  background: linear-gradient(160deg, rgba(20, 83, 45, 0.28), rgba(15, 23, 42, 0.94));
+}
+.mission-card.claimed {
+  border-color: rgba(74, 222, 128, 0.35);
+  opacity: 0.78;
+}
+.mission-slot-tag {
+  font-size: 10px;
+  font-weight: 900;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.mission-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 900;
+  color: #f8fafc;
+}
+.mission-desc {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  line-height: 1.4;
+  min-height: 35px;
+}
+.mission-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mission-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #94a3b8;
+}
+.mission-progress-track {
+  height: 8px;
+  background: rgba(30, 41, 59, 0.95);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.mission-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #4ade80);
+  border-radius: 99px;
+  transition: width 0.35s ease;
+}
+.mission-rewards-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mission-reward-pill {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #fbbf24;
+}
+.mission-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.mission-claim-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 7px;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #052e16;
+}
+.mission-claim-btn:disabled {
+  background: rgba(30, 41, 59, 0.9);
+  color: #64748b;
+  cursor: default;
+}
+.mission-reroll-btn {
+  padding: 9px 10px;
+  border-radius: 7px;
+  font-weight: 800;
+  font-size: 11.5px;
+  cursor: pointer;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+}
+.mission-reroll-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mission-all-clear-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.94));
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 11px;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}

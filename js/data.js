@@ -1096,3 +1096,70 @@ CS.getWeaponModSummary = function(weaponId, equippedIds = [], overclocked = fals
     headMultBonus: has('optic_scope') ? 1.15 : 1.0
   };
 };
+
+// --- TÄGLICHE MISSIONEN (WECHSELN JEDEN TAG IN VIELEN VARIATIONEN) ---
+CS.DAILY_MISSION_POOLS = {
+  combat: [
+    { id: 'kills_18', slot: 'combat', icon: '⚔️', title: 'Frontkämpfer', desc: 'Eliminiere 18 Gegner oder Zombies.', eventType: 'kills', target: 18, rewardCR: 260, rewardXP: 220 },
+    { id: 'hs_8', slot: 'combat', icon: '🎯', title: 'Präzisionsschütze', desc: 'Erziele 8 Kopfschuss-Kills.', eventType: 'headshots', target: 8, rewardCR: 300, rewardXP: 260 },
+    { id: 'dmg_1600', slot: 'combat', icon: '💥', title: 'Schwere Feuerkraft', desc: 'Verursache 1.600 Gesamtschaden.', eventType: 'damage', target: 1600, rewardCR: 280, rewardXP: 240 },
+    { id: 'streak_3', slot: 'combat', icon: '⚡', title: 'Serienkiller', desc: 'Erziele mindestens eine 3er-Killserie in einer Runde.', eventType: 'streak3', target: 1, rewardCR: 320, rewardXP: 280 },
+    { id: 'hs_12', slot: 'combat', icon: '🧠', title: 'Kopfgeldjäger', desc: 'Erziele 12 Kopfschuss-Kills.', eventType: 'headshots', target: 12, rewardCR: 380, rewardXP: 320, freeCaseId: 'case_sandstorm' },
+    { id: 'kills_30', slot: 'combat', icon: '🔥', title: 'Schlachtfeld-Dominanz', desc: 'Eliminiere 30 Gegner oder Zombies.', eventType: 'kills', target: 30, rewardCR: 360, rewardXP: 310 }
+  ],
+  mode: [
+    { id: 'zombie_kills_25', slot: 'mode', icon: '🧟', title: 'Untoten-Jäger', desc: 'Eliminiere 25 Zombies im Zombie Survival.', eventType: 'zombie_kills', target: 25, rewardCR: 300, rewardXP: 260 },
+    { id: 'zombie_wave_4', slot: 'mode', icon: '🌊', title: 'Wellenbrecher', desc: 'Erreiche Welle 4 oder höher im Zombie Survival.', eventType: 'zombie_wave4', target: 1, rewardCR: 400, rewardXP: 350, freeCaseId: 'case_sandstorm' },
+    { id: 'zombie_boxes_3', slot: 'mode', icon: '📦', title: 'Kisten-Glück', desc: 'Öffne 3 Waffenkisten [E] im Zombie-Modus.', eventType: 'zombie_boxes', target: 3, rewardCR: 270, rewardXP: 240 },
+    { id: 'bomb_ops_2', slot: 'mode', icon: '💣', title: 'Bomben-Spezialist', desc: 'Platziere oder entschärfe 2 Bomben im Bombenmodus.', eventType: 'bomb_ops', target: 2, rewardCR: 360, rewardXP: 320 },
+    { id: 'wins_2', slot: 'mode', icon: '🏆', title: 'Siegesserie', desc: 'Gewinne 2 Runden oder Matches.', eventType: 'wins', target: 2, rewardCR: 350, rewardXP: 300 },
+    { id: 'rounds_3', slot: 'mode', icon: '🎖️', title: 'Ausdauer-Einsatz', desc: 'Schließe 3 Runden oder Zombie-Runs ab.', eventType: 'rounds', target: 3, rewardCR: 260, rewardXP: 240 }
+  ],
+  weapon: [
+    { id: 'rifle_12', slot: 'weapon', icon: '🔫', title: 'Sturmgewehr-Profi', desc: 'Erziele 12 Kills mit Sturmgewehren (AK-47, M4, FAMAS, AUG).', eventType: 'rifle_kills', target: 12, rewardCR: 300, rewardXP: 260 },
+    { id: 'pistol_6', slot: 'weapon', icon: '🔫', title: 'Revolverheld', desc: 'Erziele 6 Kills mit Pistolen (Glock, USP-S, P250, Deagle).', eventType: 'pistol_kills', target: 6, rewardCR: 280, rewardXP: 250 },
+    { id: 'cqc_10', slot: 'weapon', icon: '⚡', title: 'Nahkampf-Sturm', desc: 'Erziele 10 Kills mit MP9, UMP-45 oder Schrotflinten.', eventType: 'cqc_kills', target: 10, rewardCR: 310, rewardXP: 270 },
+    { id: 'sniper_5', slot: 'weapon', icon: '🔭', title: 'Adlerauge', desc: 'Erziele 5 Kills mit Sniper-Gewehren (AWP oder SSG 08).', eventType: 'sniper_kills', target: 5, rewardCR: 340, rewardXP: 300 },
+    { id: 'knife_2', slot: 'weapon', icon: '🗡️', title: 'Lautlose Klinge', desc: 'Erziele 2 Messer-Kills.', eventType: 'knife_kills', target: 2, rewardCR: 380, rewardXP: 320, freeCaseId: 'case_cyber' },
+    { id: 'grenade_2', slot: 'weapon', icon: '🧨', title: 'Pyrotechniker', desc: 'Erziele 2 Kills mit Granaten oder Molotov.', eventType: 'grenade_kills', target: 2, rewardCR: 380, rewardXP: 320 }
+  ]
+};
+
+CS.DAILY_ALL_CLEAR_BONUS = {
+  rewardCR: 500,
+  rewardXP: 450,
+  freeCaseId: 'case_cyber'
+};
+
+CS.getDailyMissionTemplateById = function(id) {
+  for (const list of Object.values(CS.DAILY_MISSION_POOLS)) {
+    const found = list.find(m => m.id === id);
+    if (found) return found;
+  }
+  return null;
+};
+
+CS.pickDailyMissionsForDate = function(dateKey) {
+  // Per-slot avalanche hash so consecutive dates rotate cleanly without repeating
+  const hashSlot = (str) => {
+    let h = 1779033703;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^ (h >>> 16)) >>> 0;
+  };
+  const slots = ['combat', 'mode', 'weapon'];
+  return slots.map((slotKey) => {
+    const pool = CS.DAILY_MISSION_POOLS[slotKey];
+    const picked = pool[hashSlot(`${dateKey}|${slotKey}`) % pool.length];
+    return {
+      id: picked.id,
+      slot: slotKey,
+      progress: 0,
+      claimed: false
+    };
+  });
+};

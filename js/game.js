@@ -104,7 +104,7 @@ class TacticalGame {
     this.shellCasings = [];
     this.damageIndicators = [];
     this.activeSquadOrder = null;
-    this.roundFirstBloodAwarded = false;
+    this.matchFirstBloodAwarded = false;
     this._bulletDecalMat = null;
     this._nextClickStartsNewMatch = false;
     this._playerDiedLastRound = false;
@@ -413,6 +413,7 @@ class TacticalGame {
     this.scores = { CT: 0, T: 0 };
     this._nextClickStartsNewMatch = false;
     this._playerDiedLastRound = false;
+    this.matchFirstBloodAwarded = false;
     this.player.kills = 0;
     this.player.deaths = 0;
     this.player.assists = 0;
@@ -518,6 +519,7 @@ class TacticalGame {
 
     CS.ui.updateHeaderStats();
     CS.ui.renderLevelsTab();
+    CS.ui.renderDailyMissions();
     CS.ui.renderStatsTab();
     CS.ui.rebuildLobbyShowcase();
   }
@@ -552,7 +554,6 @@ class TacticalGame {
     const sp = pSpawns[playerSpawnIdx] || { x: 0, y: 0, z: -62, rotY: Math.PI };
     this._allTsDeadPlantedNotified = false;
     this._suppressWinCheck = false;
-    this.roundFirstBloodAwarded = false;
     this.activeSquadOrder = null;
     this.clearDamageIndicators();
     document.getElementById('multikill-banner')?.classList.add('hidden');
@@ -1779,6 +1780,10 @@ class TacticalGame {
     const killerName = isPlayerKiller ? CS.ui.profile.playerName : (killer ? (killer.isZombie ? killer.name : `BOT ${killer.name}`) : 'Explosion');
     const victimName = isPlayerVictim ? CS.ui.profile.playerName : `BOT ${victim.name}`;
 
+    // Lock First Blood on the VERY FIRST kill of the match (even if an NPC or explosion scored it!)
+    const isFirstBloodOfMatch = !this.matchFirstBloodAwarded;
+    this.matchFirstBloodAwarded = true;
+
     CS.ui.addKillfeedEntry(killerName, killer ? killer.team : victim.team, victimName, victim.team, weaponId, isHeadshot);
 
     if (isPlayerVictim) {
@@ -1803,7 +1808,7 @@ class TacticalGame {
         }
 
         // Track Round Kills & Multi-Kill Streaks (First Blood, Double Kill -> ACE!)
-        this.handlePlayerKillStreak(isHeadshot);
+        this.handlePlayerKillStreak(isHeadshot, isFirstBloodOfMatch);
         CS.ui.recordKill(weaponId, isHeadshot, this.player.roundKills || 1);
       }
 
@@ -2231,7 +2236,7 @@ class TacticalGame {
     this.updateHUD();
   }
 
-  handlePlayerKillStreak(isHeadshot = false) {
+  handlePlayerKillStreak(isHeadshot = false, isFirstBloodOfMatch = false) {
     const nowSec = performance.now() * 0.001;
     this.player.roundKills = (this.player.roundKills || 0) + 1;
 
@@ -2248,9 +2253,8 @@ class TacticalGame {
 
     const streak = this.player.multiKillCount;
 
-    // 1. First Blood Check (First kill of the round!)
-    if (!this.roundFirstBloodAwarded) {
-      this.roundFirstBloodAwarded = true;
+    // 1. First Blood Check (Only on the true very first kill of the match!)
+    if (isFirstBloodOfMatch) {
       CS.ui.recordMedal('firstBloods');
       const fbBonus = Math.max(2, Math.round(5 * this.getCreditMultiplier()));
       CS.ui.addCredits(fbBonus, '🩸 First Blood Bonus!');

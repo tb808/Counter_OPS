@@ -85,6 +85,7 @@ class UIManager {
         aug: 'default', ssg08: 'default', awp: 'default', knife: 'default'
       },
       equippedAttachments: {},
+      dailyMissions: null,
       settings: {
         sensitivity: 2.2,
         volume: 0.75,
@@ -148,6 +149,8 @@ class UIManager {
     } catch (e) {}
 
     this.updateHeaderStats();
+    this.ensureDailyMissions();
+    this.renderDailyMissions();
     this.rebuildLobbyShowcase();
     this.renderCustomizer();
     this.renderLevelsTab();
@@ -183,11 +186,17 @@ class UIManager {
       }
     }
     st.totalDamage = Math.round((st.totalDamage || 0) + Math.max(0, damage));
+    if (damage > 0) {
+      this.progressDailyMissions('damage', Math.round(damage));
+    }
   }
 
   recordDamageOnly(damage = 0) {
     const st = this.ensureStats();
     st.totalDamage = Math.round((st.totalDamage || 0) + Math.max(0, damage));
+    if (damage > 0) {
+      this.progressDailyMissions('damage', Math.round(damage));
+    }
   }
 
   recordKill(weaponId, isHeadshot = false, roundStreak = 1) {
@@ -228,6 +237,27 @@ class UIManager {
       st.bestKillStreak = roundStreak;
     }
     this.saveProfile();
+
+    // Daily Missions progress hooks
+    this.progressDailyMissions('kills', 1);
+    if (isHeadshot) this.progressDailyMissions('headshots', 1);
+    if (roundStreak >= 3) this.progressDailyMissions('streak3', 1);
+    if (weaponId) {
+      const wData = CS.WEAPONS?.[weaponId];
+      if (weaponId === 'knife') {
+        this.progressDailyMissions('knife_kills', 1);
+      } else if (weaponId === 'he' || weaponId === 'molotov') {
+        this.progressDailyMissions('grenade_kills', 1);
+      } else if (weaponId === 'awp' || weaponId === 'ssg08') {
+        this.progressDailyMissions('sniper_kills', 1);
+      } else if (wData?.category === 'pistols') {
+        this.progressDailyMissions('pistol_kills', 1);
+      } else if (wData?.category === 'smgs') {
+        this.progressDailyMissions('cqc_kills', 1);
+      } else if (wData?.category === 'rifles') {
+        this.progressDailyMissions('rifle_kills', 1);
+      }
+    }
 
     if (newlyUnlockedTiers.length > 0) {
       const wName = CS.WEAPONS[weaponId]?.name || weaponId.toUpperCase();
@@ -281,6 +311,9 @@ class UIManager {
     const st = this.ensureStats();
     st[medalKey] = (st[medalKey] || 0) + 1;
     this.saveProfile();
+    if (medalKey === 'bombsPlanted' || medalKey === 'bombsDefused') {
+      this.progressDailyMissions('bomb_ops', 1);
+    }
   }
 
   recordRoundEnd(won, mapId) {
@@ -292,6 +325,8 @@ class UIManager {
       st.mapRounds[mapId] = (st.mapRounds[mapId] || 0) + 1;
     }
     this.saveProfile();
+    this.progressDailyMissions('rounds', 1);
+    if (won) this.progressDailyMissions('wins', 1);
   }
 
   recordZombieStats({ wave = 0, killsAdd = 0, boxesAdd = 0 } = {}) {
@@ -300,6 +335,9 @@ class UIManager {
     if (killsAdd > 0) st.zombieKills = (st.zombieKills || 0) + killsAdd;
     if (boxesAdd > 0) st.zombieBoxesOpened = (st.zombieBoxesOpened || 0) + boxesAdd;
     this.saveProfile();
+    if (killsAdd > 0) this.progressDailyMissions('zombie_kills', killsAdd);
+    if (boxesAdd > 0) this.progressDailyMissions('zombie_boxes', boxesAdd);
+    if (wave >= 4) this.progressDailyMissions('zombie_wave4', 1);
   }
 
   saveProfile() {
@@ -341,6 +379,7 @@ class UIManager {
   }
 
   init() {
+    this.ensureDailyMissions();
     this.initLobby3D();
     this.bindLobbyEvents();
     this.updateHeaderStats();
@@ -348,11 +387,27 @@ class UIManager {
     this.renderDifficultySelectors();
     this.renderCustomizer();
     this.renderLevelsTab();
+    this.renderDailyMissions();
     this.renderCasesTab();
     this.renderShopTab();
     this.renderStatsTab();
     this.applySettingsToUI();
     this.updateCrosshairDOM();
+    if (!this._dailyResetInterval) {
+      this._dailyResetInterval = setInterval(() => {
+        const lobbyEl = document.getElementById('lobby-screen');
+        if (lobbyEl && !lobbyEl.classList.contains('hidden')) {
+          const prevDate = this.profile.dailyMissions?.date;
+          this.ensureDailyMissions();
+          if (this.profile.dailyMissions?.date !== prevDate) {
+            this.renderDailyMissions();
+          } else {
+            const cdEl = document.getElementById('missions-countdown');
+            if (cdEl) cdEl.textContent = `⏳ Neue Missionen in ${this.getDailyResetCountdownText()}`;
+          }
+        }
+      }, 1000);
+    }
   }
 
   // ==========================================================================
@@ -502,10 +557,15 @@ class UIManager {
       this.rebuildLobbyShowcase();
     } else if (tabId === 'levels') {
       this.renderLevelsTab();
+    } else if (tabId === 'missions') {
+      this.ensureDailyMissions();
+      this.renderDailyMissions();
     } else if (tabId === 'stats') {
       this.renderStatsTab();
     } else if (tabId === 'cases') {
       this.renderCasesTab();
+    } else if (tabId === 'play') {
+      this.renderDailyMissions();
     }
   }
 
@@ -696,6 +756,17 @@ class UIManager {
         badgeEl.classList.remove('hidden');
       } else {
         badgeEl.classList.add('hidden');
+      }
+    }
+
+    const missionBadgeEl = document.getElementById('missions-unclaimed-badge');
+    if (missionBadgeEl) {
+      const readyCount = this.getReadyDailyMissionCount();
+      if (readyCount > 0) {
+        missionBadgeEl.textContent = `${readyCount}🎁`;
+        missionBadgeEl.classList.remove('hidden');
+      } else {
+        missionBadgeEl.classList.add('hidden');
       }
     }
   }
@@ -2417,6 +2488,317 @@ class UIManager {
 
     tbodyCT.innerHTML = renderRows('CT');
     tbodyT.innerHTML = renderRows('T');
+  }
+
+  // ==========================================================================
+  // DAILY ROTATING MISSIONS ("📋 TÄGLICHE MISSIONEN")
+  // ==========================================================================
+  getTodayDateKey(dateObj = new Date()) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  getDailyResetCountdownText() {
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const totalSecs = Math.max(0, Math.floor((nextMidnight.getTime() - now.getTime()) / 1000));
+    const hrs = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
+    const mins = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
+    const secs = String(totalSecs % 60).padStart(2, '0');
+    return `${hrs}:${mins}:${secs}`;
+  }
+
+  ensureDailyMissions() {
+    if (!CS.pickDailyMissionsForDate) return null;
+    const today = this.getTodayDateKey();
+    const dm = this.profile.dailyMissions;
+    if (!dm || dm.date !== today || !Array.isArray(dm.missions) || dm.missions.length !== 3) {
+      this.profile.dailyMissions = {
+        date: today,
+        rerollsLeft: 1,
+        allClearClaimed: false,
+        missions: CS.pickDailyMissionsForDate(today)
+      };
+      this.saveProfile();
+    }
+    return this.profile.dailyMissions;
+  }
+
+  progressDailyMissions(eventType, amount = 1) {
+    if (!eventType || amount <= 0) return;
+    const dm = this.ensureDailyMissions();
+    if (!dm || !Array.isArray(dm.missions)) return;
+
+    let changed = false;
+    const newlyCompleted = [];
+    dm.missions.forEach(mState => {
+      if (mState.claimed) return;
+      const tpl = CS.getDailyMissionTemplateById?.(mState.id);
+      if (!tpl || tpl.eventType !== eventType) return;
+      if ((mState.progress || 0) >= tpl.target) return;
+
+      const prev = mState.progress || 0;
+      const next = Math.min(tpl.target, prev + amount);
+      if (next !== prev) {
+        mState.progress = next;
+        changed = true;
+        if (next >= tpl.target) {
+          newlyCompleted.push(tpl);
+        }
+      }
+    });
+
+    if (changed) {
+      this.saveProfile();
+      if (newlyCompleted.length > 0) {
+        CS.audio?.playUISound('unbox_win');
+        newlyCompleted.forEach(tpl => {
+          this.showToast(`📋 TAGES-MISSION ERFÜLLT: ${tpl.icon} ${tpl.title}! (+${tpl.rewardCR} CR abholen)`, 'gold');
+        });
+      }
+    }
+  }
+
+  getReadyDailyMissionCount() {
+    const dm = this.profile?.dailyMissions;
+    if (!dm || dm.date !== this.getTodayDateKey() || !Array.isArray(dm.missions)) return 0;
+    let count = 0;
+    let allClaimed = true;
+    dm.missions.forEach(mState => {
+      const tpl = CS.getDailyMissionTemplateById?.(mState.id);
+      if (!tpl) return;
+      if (!mState.claimed) allClaimed = false;
+      if (!mState.claimed && (mState.progress || 0) >= tpl.target) count++;
+    });
+    if (allClaimed && !dm.allClearClaimed) count++;
+    return count;
+  }
+
+  claimDailyMission(missionId) {
+    const dm = this.ensureDailyMissions();
+    if (!dm) return false;
+    const mState = dm.missions.find(m => m.id === missionId);
+    const tpl = CS.getDailyMissionTemplateById?.(missionId);
+    if (!mState || !tpl || mState.claimed || (mState.progress || 0) < tpl.target) return false;
+
+    mState.claimed = true;
+    this.profile.credits += tpl.rewardCR || 0;
+    const st = this.ensureStats();
+    st.totalCreditsEarned = (st.totalCreditsEarned || 0) + (tpl.rewardCR || 0);
+    this.profile.xp = Math.max(0, Math.round(this.profile.xp + (tpl.rewardXP || 0)));
+
+    let extraTxt = '';
+    if (tpl.freeCaseId) {
+      if (!this.profile.freeCases) this.profile.freeCases = {};
+      this.profile.freeCases[tpl.freeCaseId] = (this.profile.freeCases[tpl.freeCaseId] || 0) + 1;
+      const cName = CS.CASES?.find(c => c.id === tpl.freeCaseId)?.name || 'Gratis-Kiste';
+      extraTxt = ` + 1x ${cName}`;
+    }
+
+    CS.audio?.playUISound('unbox_win');
+    this.saveProfile();
+    this.renderDailyMissions();
+    this.renderCasesTab();
+    this.renderLevelsTab();
+    this.renderStatsTab();
+    this.showToast(`🎉 Mission abgeholt: +${tpl.rewardCR} CR & +${tpl.rewardXP} XP${extraTxt}!`, 'gold');
+    return true;
+  }
+
+  claimAllClearBonus() {
+    const dm = this.ensureDailyMissions();
+    if (!dm || dm.allClearClaimed) return false;
+    const allClaimed = dm.missions.every(m => m.claimed);
+    if (!allClaimed) return false;
+
+    dm.allClearClaimed = true;
+    const bonus = CS.DAILY_ALL_CLEAR_BONUS;
+    this.profile.credits += bonus.rewardCR;
+    const st = this.ensureStats();
+    st.totalCreditsEarned = (st.totalCreditsEarned || 0) + bonus.rewardCR;
+    this.profile.xp = Math.max(0, Math.round(this.profile.xp + bonus.rewardXP));
+    if (bonus.freeCaseId) {
+      if (!this.profile.freeCases) this.profile.freeCases = {};
+      this.profile.freeCases[bonus.freeCaseId] = (this.profile.freeCases[bonus.freeCaseId] || 0) + 1;
+    }
+
+    CS.audio?.playUISound('unbox_win');
+    this.saveProfile();
+    this.renderDailyMissions();
+    this.renderCasesTab();
+    this.renderLevelsTab();
+    this.renderStatsTab();
+    this.showToast(`🌟 TAGES-HAUPTBELOHNUNG ABGEHOLT: +${bonus.rewardCR} CR, +${bonus.rewardXP} XP & 1x Cyberglow-Kiste!`, 'gold');
+    return true;
+  }
+
+  rerollDailyMission(slotIdx) {
+    const dm = this.ensureDailyMissions();
+    if (!dm || (dm.rerollsLeft || 0) <= 0) {
+      CS.audio?.playUISound('error');
+      this.showToast('❌ Du hast heute deinen kostenlosen Missions-Tausch bereits genutzt!', 'warn');
+      return false;
+    }
+    const cur = dm.missions[slotIdx];
+    if (!cur || cur.claimed) return false;
+    const pool = CS.DAILY_MISSION_POOLS?.[cur.slot] || [];
+    const alternatives = pool.filter(p => p.id !== cur.id);
+    if (!alternatives.length) return false;
+
+    const pick = alternatives[Math.floor(Math.random() * alternatives.length)];
+    dm.missions[slotIdx] = {
+      id: pick.id,
+      slot: cur.slot,
+      progress: 0,
+      claimed: false
+    };
+    dm.rerollsLeft--;
+    CS.audio?.playUISound('buy');
+    this.saveProfile();
+    this.renderDailyMissions();
+    this.showToast(`🎲 Neue Mission gewürfelt: ${pick.icon} ${pick.title}`, 'info');
+    return true;
+  }
+
+  renderDailyMissions() {
+    const dm = this.ensureDailyMissions();
+    if (!dm) return;
+
+    const slotNames = {
+      combat: 'KAMPF-AUFTRAG',
+      mode: 'MODUS-AUFTRAG',
+      weapon: 'WAFFEN-AUFTRAG'
+    };
+
+    const readyCount = this.getReadyDailyMissionCount();
+    const claimedCount = dm.missions.filter(m => m.claimed).length;
+
+    // 1. Compact Floating Strip in Play Tab
+    const stripEl = document.getElementById('play-daily-strip');
+    if (stripEl) {
+      stripEl.innerHTML = `
+        <div class="play-daily-head">
+          <span>📋 HEUTIGE MISSIONEN (${claimedCount}/3)</span>
+          <span style="color:${readyCount > 0 ? '#4ade80' : '#94a3b8'};">
+            ${readyCount > 0 ? `${readyCount} ABHOLBEREIT →` : 'DETAILS & TAUSCH →'}
+          </span>
+        </div>
+        <div class="play-daily-list">
+          ${dm.missions.map(mState => {
+            const tpl = CS.getDailyMissionTemplateById?.(mState.id);
+            if (!tpl) return '';
+            const prog = Math.min(tpl.target, mState.progress || 0);
+            const pct = Math.round((prog / tpl.target) * 100);
+            const isReady = !mState.claimed && prog >= tpl.target;
+            return `
+              <div class="play-daily-pill ${mState.claimed ? 'claimed' : (isReady ? 'ready' : '')}" title="${tpl.desc}">
+                <div class="play-daily-pill-title">${tpl.icon} ${tpl.title}</div>
+                <div class="play-daily-pill-prog">
+                  <span>${mState.claimed ? '✓ FERTIG' : (isReady ? '🎁 ABHOLEN' : `${prog}/${tpl.target}`)}</span>
+                  <span style="color:#38bdf8;">+${tpl.rewardCR}</span>
+                </div>
+                <div class="play-daily-bar">
+                  <div class="play-daily-bar-fill" style="width:${pct}%"></div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      stripEl.onclick = () => this.switchLobbyTab('missions');
+    }
+
+    // 2. Full Missions Tab
+    const headerEl = document.getElementById('missions-header');
+    if (headerEl) {
+      headerEl.innerHTML = `
+        <div>
+          <div style="font-size:17px;font-weight:900;color:#f8fafc;">📋 TÄGLICHE MISSIONEN (${dm.date})</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:2px;">
+            Jeden Tag 3 neue Variationen aus 18 Aufträgen • Tausch heute verfügbar: <strong style="color:#38bdf8">${dm.rerollsLeft || 0}x</strong>
+          </div>
+        </div>
+        <div id="missions-countdown" style="font-size:13px;font-weight:900;color:#fbbf24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.35);padding:7px 12px;border-radius:8px;">
+          ⏳ Neue Missionen in ${this.getDailyResetCountdownText()}
+        </div>
+      `;
+    }
+
+    const gridEl = document.getElementById('missions-cards-grid');
+    if (gridEl) {
+      gridEl.innerHTML = dm.missions.map((mState, idx) => {
+        const tpl = CS.getDailyMissionTemplateById?.(mState.id);
+        if (!tpl) return '';
+        const prog = Math.min(tpl.target, mState.progress || 0);
+        const pct = Math.round((prog / tpl.target) * 100);
+        const isReady = !mState.claimed && prog >= tpl.target;
+        const caseObj = tpl.freeCaseId ? CS.CASES?.find(c => c.id === tpl.freeCaseId) : null;
+        return `
+          <div class="mission-card ${mState.claimed ? 'claimed' : (isReady ? 'ready' : '')}">
+            <div class="mission-slot-tag">${slotNames[tpl.slot] || 'TAGES-AUFTRAG'}</div>
+            <div class="mission-title-row">
+              <span style="font-size:22px;">${tpl.icon}</span>
+              <span>${tpl.title}</span>
+            </div>
+            <div class="mission-desc">${tpl.desc}</div>
+            <div class="mission-progress-wrap">
+              <div class="mission-progress-row">
+                <span>Fortschritt</span>
+                <span style="color:${isReady ? '#4ade80' : '#f8fafc'};">${prog.toLocaleString('de-DE')} / ${tpl.target.toLocaleString('de-DE')} (${pct}%)</span>
+              </div>
+              <div class="mission-progress-track">
+                <div class="mission-progress-fill" style="width:${pct}%"></div>
+              </div>
+            </div>
+            <div class="mission-rewards-row">
+              <span class="mission-reward-pill">🪙 +${tpl.rewardCR} CR</span>
+              <span class="mission-reward-pill" style="color:#38bdf8;">⭐ +${tpl.rewardXP} XP</span>
+              ${caseObj ? `<span class="mission-reward-pill" style="color:#c084fc;">🎁 1x ${caseObj.name}</span>` : ''}
+            </div>
+            <div class="mission-actions-row">
+              <button class="mission-claim-btn" data-claim-mission="${tpl.id}" ${!isReady ? 'disabled' : ''}>
+                ${mState.claimed ? '✓ ABGEHOLT' : (isReady ? '🎁 BELOHNUNG ABHOLEN' : 'IN ARBEIT')}
+              </button>
+              ${!mState.claimed && !isReady ? `
+                <button class="mission-reroll-btn" data-reroll-slot="${idx}" ${(dm.rerollsLeft || 0) <= 0 ? 'disabled' : ''} title="Tausche diese Mission gegen eine andere Variation (1x pro Tag)">
+                  🎲 Tauschen
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      gridEl.querySelectorAll('[data-claim-mission]').forEach(btn => {
+        btn.addEventListener('click', () => this.claimDailyMission(btn.dataset.claimMission));
+      });
+      gridEl.querySelectorAll('[data-reroll-slot]').forEach(btn => {
+        btn.addEventListener('click', () => this.rerollDailyMission(parseInt(btn.dataset.rerollSlot, 10)));
+      });
+    }
+
+    const allClearEl = document.getElementById('missions-all-clear-wrap');
+    if (allClearEl) {
+      const allClaimed = dm.missions.every(m => m.claimed);
+      const bonus = CS.DAILY_ALL_CLEAR_BONUS;
+      allClearEl.innerHTML = `
+        <div class="mission-all-clear-card">
+          <div>
+            <div style="font-size:15px;font-weight:900;color:#fbbf24;">🌟 TAGES-HAUPTBELOHNUNG (ALLE 3 MISSIONEN ABSCHLIESSEN: ${claimedCount} / 3)</div>
+            <div style="font-size:12.5px;color:#cbd5e1;margin-top:3px;">
+              Extra-Belohnung: <strong>+${bonus.rewardCR} CR</strong> &bull; <strong>+${bonus.rewardXP} XP</strong> &bull; <strong>1x Gratis Cyberglow-Kiste</strong>
+            </div>
+          </div>
+          <button id="btn-claim-all-clear" class="mission-claim-btn" style="flex:0 0 auto;padding:11px 18px;" ${(!allClaimed || dm.allClearClaimed) ? 'disabled' : ''}>
+            ${dm.allClearClaimed ? '✓ TAGES-BONUS ABGEHOLT' : (allClaimed ? '🌟 HAUPTBELOHNUNG ABHOLEN!' : `🔒 NOCH ${3 - claimedCount} OFFEN`)}
+          </button>
+        </div>
+      `;
+      const btn = document.getElementById('btn-claim-all-clear');
+      if (btn) btn.addEventListener('click', () => this.claimAllClearBonus());
+    }
   }
 }
 
